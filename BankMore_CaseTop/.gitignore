@@ -1,0 +1,60 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Banco local
+*.db
+*.db-shm
+*.db-wal
+
+# Node
+node_modules/
+dist/
+.angular/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Backups e sidecars
+*.bak
+*.orig
+*.refactored
+*.secure
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Flink
+checkpoints/
+savepoints/
+
+# ML
+*.joblib
+*.pkl
+*.onnx
+data/raw/
+data/processed/
+mlruns/

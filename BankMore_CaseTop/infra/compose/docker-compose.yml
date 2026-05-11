@@ -1,0 +1,216 @@
+# BankMore Case Top — infra unificada
+# Sprint 1: postgres + redis + kafka stack + flink.
+# APIs .NET e Worker rodam local (dotnet run) por enquanto.
+
+services:
+  # ============================================================
+  # Postgres 16 — banco transacional
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: bankmore-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: bankmore
+      POSTGRES_PASSWORD: bankmore123
+      POSTGRES_DB: bankmore_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../db/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankmore -d bankmore_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bankmore
+
+  # ============================================================
+  # Redis 7 — feature store quente
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: bankmore-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - bankmore
+
+  # ============================================================
+  # Kafka stack — Zookeeper + Kafka + Schema Registry + UI
+  # ============================================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: bankmore-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc localhost 2181 | grep -q Mode"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bankmore
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: bankmore-kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Dois listeners: INTERNAL para containers, EXTERNAL (localhost:9092) para host
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 24
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bankmore
+
+  # Cria os 4 tópicos do Sprint 1 sem auto-create (controle explícito de partições/replication)
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: bankmore-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command: |
+      "
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic transferencia.solicitada --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic transferencia.aprovada  --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic transferencia.rejeitada --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic fraude.alerta            --partitions 3 --replication-factor 1
+      echo '--- Tópicos criados ---'
+      kafka-topics --bootstrap-server kafka:29092 --list
+      "
+    networks:
+      - bankmore
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    container_name: bankmore-schema-registry
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8085:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/subjects > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bankmore
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: bankmore-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: bankmore
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+    networks:
+      - bankmore
+
+  # ============================================================
+  # Flink 1.18 — JobManager + TaskManager
+  # ============================================================
+  flink-jobmanager:
+    image: flink:1.18-java11
+    container_name: bankmore-flink-jm
+    ports:
+      - "8082:8081"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        state.backend: rocksdb
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+        state.savepoints.dir: file:///opt/flink/savepoints
+        execution.checkpointing.interval: 60000
+        execution.checkpointing.mode: EXACTLY_ONCE
+    volumes:
+      - flink_checkpoints:/opt/flink/checkpoints
+      - flink_savepoints:/opt/flink/savepoints
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/overview > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bankmore
+
+  flink-taskmanager:
+    image: flink:1.18-java11
+    container_name: bankmore-flink-tm
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        state.backend: rocksdb
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+        state.savepoints.dir: file:///opt/flink/savepoints
+    volumes:
+      - flink_checkpoints:/opt/flink/checkpoints
+      - flink_savepoints:/opt/flink/savepoints
+    networks:
+      - bankmore
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+  flink_checkpoints:
+  flink_savepoints:
+
+networks:
+  bankmore:
+    driver: bridge

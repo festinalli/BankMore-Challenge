@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\BankMore.Transferencia.Application\BankMore.Transferencia.Application.csproj" />
+    <ProjectReference Include="..\BankMore.Transferencia.Infrastructure\BankMore.Transferencia.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="KafkaFlow" Version="4.1.0" />
+    <PackageReference Include="KafkaFlow.LogHandler.Console" Version="4.1.0" />
+    <PackageReference Include="KafkaFlow.Microsoft.DependencyInjection" Version="4.1.0" />
+    <PackageReference Include="KafkaFlow.Serializer.NewtonsoftJson" Version="4.1.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+    <PackageReference Include="MediatR" Version="12.2.0" />
+  </ItemGroup>
+</Project>

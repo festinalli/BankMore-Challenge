@@ -1,0 +1,68 @@
+# Storyline para entrevista
+
+Versão expandida do pitch de 4 minutos. Use como roteiro mental, não decore.
+
+## Hook (30s)
+
+> "Construí um sistema bancário onde toda transferência passa por um pipeline de detecção de fraude em tempo real **antes** de ser efetivada. PyFlink decide em sub-segundo, ML treinado em dataset sintético, observabilidade ponta-a-ponta. Quero te mostrar como ele bloqueia um ataque ao vivo."
+
+## Por que assim (1 min)
+
+- Banco moderno **não pode** bloquear apenas com regras simples — fraudadores fracionam, fazem burst, usam contas-mula.
+- Resposta síncrona em < 1s **e** processamento stateful em 1h de janela são requisitos contraditórios para uma API tradicional.
+- Solução: **separar solicitação de efetivação**. API responde 202 com `correlationId`; PyFlink decide; cliente recebe push.
+
+## Decisões arquiteturais (2 min)
+
+### 1. Event-driven com Kafka como espinha dorsal
+- Tópicos: `transferencia.solicitada` → `transferencia.{aprovada,rejeitada,alerta}`
+- Avro + Schema Registry → contratos versionados, evita drift entre produtores
+- **Tradeoff:** complexidade de UX (cliente espera push) por escalabilidade horizontal
+
+### 2. PyFlink no path crítico, não como afterthought
+- Event-time com watermark de 5s — replay determinístico
+- `KeyedState` com RocksDB — janela de 1h por CPF sem custo de Redis
+- Exactly-once com checkpoint a cada 60s
+- Side outputs em vez de tópicos múltiplos no sink
+- **Tradeoff:** ops complexity (precisa savepoint para deploy) por correctness
+
+### 3. ML híbrido — regras + modelo
+- Regras duras no Flink: saldo insuficiente, autotransferência, conta inativa
+- Modelo no Flask: features rolling, score [0,1]
+- Decisão: regras primeiro (rejeição imediata), modelo segundo (score combinado)
+- **Tradeoff:** latência da chamada HTTP por versionamento independente do modelo
+
+### 4. Observabilidade obrigatória, não decorativa
+- OpenTelemetry trace propagada via Kafka header
+- Trace completa: Angular → API → Kafka → Flink → ML → Worker → Postgres no Jaeger
+- Métricas Prometheus em todos os serviços
+- Grafana dashboard pré-configurado
+
+## Demo ao vivo (1 min)
+
+1. `make demo` no terminal lateral.
+2. 50 transferências legítimas → todas aprovadas, p95 ~ 200ms (mostro no Grafana).
+3. Burst: 8 transferências de R$4.999 do mesmo CPF em 30s.
+4. A partir da 4ª, score sobe acima do threshold → REJEITADA.
+5. Painel ops mostra alerta em tempo real via SSE.
+6. Worker **não** processa as rejeitadas — saldo do atacante não é debitado, vítimas (destinos) não recebem.
+
+## Perguntas que você quer ouvir
+
+- "Como você faz deploy de novo modelo sem downtime?"
+  → **Shadow mode**: Flink chama dois modelos, registra ambas predições, só uma decide. A/B online sem risco. `X-Model-Version` em todo evento.
+
+- "E LGPD?"
+  → CPF é hasheado com salt rotativo antes de entrar no Kafka. Logs mascarados. PII só na API e no Postgres, com criptografia em repouso.
+
+- "Como você escalaria?"
+  → Particionamento Kafka por hash do CPF; Flink scaleia consumindo as partições; ML é stateless atrás de Gunicorn workers; Postgres com read-replica para o feature store warm.
+
+- "Como você sabe se o modelo está funcionando?"
+  → PSI mensal nos features; recall medido em janela móvel comparando rejeições com chargebacks reportados; alertas em drift > 0.2.
+
+## O que NÃO contar
+
+- Que o BankMore tem 3 versões anteriores quebradas.
+- Quanto tempo levou.
+- Que os schemas Avro foram a parte mais demorada (parece bobeira mas dá calo).

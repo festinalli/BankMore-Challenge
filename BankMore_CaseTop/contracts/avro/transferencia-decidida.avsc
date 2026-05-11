@@ -1,0 +1,16 @@
+{
+  "type": "record",
+  "namespace": "com.bankmore.events",
+  "name": "TransferenciaDecidida",
+  "doc": "Decisão do PyFlink sobre uma TransferenciaSolicitada. Side outputs: APROVADA, REJEITADA, ALERTA. Worker só processa APROVADA; ops monitora ALERTA.",
+  "fields": [
+    { "name": "id", "type": { "type": "string", "logicalType": "uuid" }, "doc": "ID da solicitação original (mesmo que TransferenciaSolicitada.id)" },
+    { "name": "correlationId", "type": { "type": "string", "logicalType": "uuid" } },
+    { "name": "decisao", "type": { "type": "enum", "name": "Decisao", "symbols": ["APROVADA", "REJEITADA", "ALERTA"] } },
+    { "name": "score", "type": "double", "doc": "Score de fraude [0.0, 1.0]" },
+    { "name": "modeloVersao", "type": "string", "doc": "Versão do modelo ML que decidiu, ex: xgboost-v2.3" },
+    { "name": "regrasAcionadas", "type": { "type": "array", "items": "string" }, "default": [], "doc": "Lista de regras determinísticas que dispararam (saldo_insuficiente, autotransferencia, etc.)" },
+    { "name": "decididoEm", "type": { "type": "long", "logicalType": "timestamp-millis" } },
+    { "name": "latenciaMs", "type": "int", "doc": "Tempo entre TransferenciaSolicitada.timestamp e decididoEm" }
+  ]
+}

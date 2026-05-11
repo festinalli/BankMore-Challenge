@@ -1,0 +1,17 @@
+{
+  "type": "record",
+  "namespace": "com.bankmore.events",
+  "name": "TransferenciaSolicitada",
+  "doc": "Evento emitido pela API de Transferência quando o cliente solicita uma transferência. Ainda não foi efetivada — passa pelo PyFlink antes.",
+  "fields": [
+    { "name": "id", "type": { "type": "string", "logicalType": "uuid" }, "doc": "Identificador único da solicitação" },
+    { "name": "correlationId", "type": { "type": "string", "logicalType": "uuid" }, "doc": "ID propagado em logs/headers para tracing" },
+    { "name": "contaOrigemId", "type": "string", "doc": "GUID da conta de origem (não CPF — privacidade)" },
+    { "name": "cpfOrigemHash", "type": "string", "doc": "SHA-256 do CPF + salt rotativo, para análise sem expor PII" },
+    { "name": "cpfDestinoHash", "type": "string" },
+    { "name": "valor", "type": { "type": "bytes", "logicalType": "decimal", "precision": 18, "scale": 2 } },
+    { "name": "tipo", "type": { "type": "enum", "name": "TipoTransferencia", "symbols": ["PIX", "TED", "TEF"] } },
+    { "name": "timestamp", "type": { "type": "long", "logicalType": "timestamp-millis" }, "doc": "Quando a solicitação foi feita (event-time)" },
+    { "name": "canal", "type": { "type": "enum", "name": "Canal", "symbols": ["WEB", "MOBILE", "API"] }, "default": "WEB" }
+  ]
+}
