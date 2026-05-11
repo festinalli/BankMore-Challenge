@@ -1,10 +1,9 @@
-# BankMore Case Top — infra unificada
-# Sprint 1: postgres + redis + kafka stack + flink.
-# APIs .NET e Worker rodam local (dotnet run) por enquanto.
+# BankMore Case Top — infra + app unificada
+# Tudo sobe com: make up    (depende do .env na raiz do projeto)
 
 services:
   # ============================================================
-  # Postgres 16 — banco transacional
+  # Postgres 16
   # ============================================================
   postgres:
     image: postgres:16-alpine
@@ -12,22 +11,21 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: bankmore
-      POSTGRES_PASSWORD: bankmore123
-      POSTGRES_DB: bankmore_db
+      POSTGRES_USER: ${POSTGRES_USER:-bankmore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bankmore123}
+      POSTGRES_DB: ${POSTGRES_DB:-bankmore_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../db/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bankmore -d bankmore_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bankmore} -d ${POSTGRES_DB:-bankmore_db}"]
       interval: 5s
       timeout: 5s
       retries: 10
-    networks:
-      - bankmore
+    networks: [bankmore]
 
   # ============================================================
-  # Redis 7 — feature store quente
+  # Redis
   # ============================================================
   redis:
     image: redis:7-alpine
@@ -42,11 +40,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-    networks:
-      - bankmore
+    networks: [bankmore]
 
   # ============================================================
-  # Kafka stack — Zookeeper + Kafka + Schema Registry + UI
+  # Kafka stack
   # ============================================================
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -61,8 +58,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    networks:
-      - bankmore
+    networks: [bankmore]
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -76,7 +72,6 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # Dois listeners: INTERNAL para containers, EXTERNAL (localhost:9092) para host
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
@@ -93,10 +88,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    networks:
-      - bankmore
+    networks: [bankmore]
 
-  # Cria os 4 tópicos do Sprint 1 sem auto-create (controle explícito de partições/replication)
   kafka-init:
     image: confluentinc/cp-kafka:7.5.0
     container_name: bankmore-kafka-init
@@ -110,11 +103,10 @@ services:
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic transferencia.aprovada  --partitions 3 --replication-factor 1
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic transferencia.rejeitada --partitions 3 --replication-factor 1
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic fraude.alerta            --partitions 3 --replication-factor 1
-      echo '--- Tópicos criados ---'
-      kafka-topics --bootstrap-server kafka:29092 --list
+      echo '--- Tópicos ---' && kafka-topics --bootstrap-server kafka:29092 --list
       "
-    networks:
-      - bankmore
+    restart: "no"
+    networks: [bankmore]
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.5.0
@@ -133,8 +125,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    networks:
-      - bankmore
+    networks: [bankmore]
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -150,11 +141,10 @@ services:
       KAFKA_CLUSTERS_0_NAME: bankmore
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
       KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
-    networks:
-      - bankmore
+    networks: [bankmore]
 
   # ============================================================
-  # Flink 1.18 — JobManager + TaskManager
+  # Flink 1.18 (placeholders — usados a partir do Sprint 2)
   # ============================================================
   flink-jobmanager:
     image: flink:1.18-java11
@@ -180,8 +170,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    networks:
-      - bankmore
+    networks: [bankmore]
 
   flink-taskmanager:
     image: flink:1.18-java11
@@ -195,14 +184,80 @@ services:
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
         taskmanager.numberOfTaskSlots: 4
-        state.backend: rocksdb
-        state.checkpoints.dir: file:///opt/flink/checkpoints
-        state.savepoints.dir: file:///opt/flink/savepoints
     volumes:
       - flink_checkpoints:/opt/flink/checkpoints
       - flink_savepoints:/opt/flink/savepoints
-    networks:
-      - bankmore
+    networks: [bankmore]
+
+  # ============================================================
+  # Applications (.NET 8)
+  # ============================================================
+  contacorrente-api:
+    build:
+      context: ../..
+      dockerfile: src/BankMore.ContaCorrente.Api/Dockerfile
+    container_name: bankmore-contacorrente-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5000:8080"
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-bankmore_db};Username=${POSTGRES_USER:-bankmore};Password=${POSTGRES_PASSWORD:-bankmore123};Maximum Pool Size=20
+      JWT_KEY: ${JWT_KEY:?env JWT_KEY é obrigatória}
+    networks: [bankmore]
+
+  transferencia-api:
+    build:
+      context: ../..
+      dockerfile: src/BankMore.Transferencia.Api/Dockerfile
+    container_name: bankmore-transferencia-api
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "5001:8080"
+    environment:
+      Kafka__Broker: kafka:29092
+      JWT_KEY: ${JWT_KEY:?env JWT_KEY é obrigatória}
+    networks: [bankmore]
+
+  tarifas-worker:
+    build:
+      context: ../..
+      dockerfile: src/BankMore.Tarifas.Worker/Dockerfile
+    container_name: bankmore-tarifas-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-bankmore_db};Username=${POSTGRES_USER:-bankmore};Password=${POSTGRES_PASSWORD:-bankmore123};Maximum Pool Size=10
+      Kafka__Broker: kafka:29092
+    networks: [bankmore]
+
+  # Sprint 1 only — substituído pelo job PyFlink no Sprint 2
+  auto-approver:
+    build:
+      context: ../../pyflink
+      dockerfile: Dockerfile
+    container_name: bankmore-auto-approver
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      SOURCE_TOPIC: transferencia.solicitada
+      SINK_TOPIC: transferencia.aprovada
+      GROUP_ID: auto-approver
+    networks: [bankmore]
 
 volumes:
   postgres_data:

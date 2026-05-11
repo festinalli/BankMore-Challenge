@@ -1,18 +1,20 @@
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
-WORKDIR /app
-
+# BankMore.Tarifas.Worker — multi-stage .NET 8
+# Build context: raiz do BankMore_CaseTop/
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY ["src/BankMore.Tarifas.Worker/BankMore.Tarifas.Worker.csproj", "src/BankMore.Tarifas.Worker/"]
-RUN dotnet restore "src/BankMore.Tarifas.Worker/BankMore.Tarifas.Worker.csproj"
-COPY . .
-WORKDIR "/src/src/BankMore.Tarifas.Worker"
-RUN dotnet build "BankMore.Tarifas.Worker.csproj" -c Release -o /app/build
 
-FROM build AS publish
-RUN dotnet publish "BankMore.Tarifas.Worker.csproj" -c Release -o /app/publish /p:UseAppHost=false
+COPY src/BankMore.Tarifas.Worker/BankMore.Tarifas.Worker.csproj src/BankMore.Tarifas.Worker/
 
-FROM base AS final
+RUN dotnet restore src/BankMore.Tarifas.Worker/BankMore.Tarifas.Worker.csproj
+
+COPY src/ src/
+RUN dotnet publish src/BankMore.Tarifas.Worker/BankMore.Tarifas.Worker.csproj \
+    -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
-COPY --from=publish /app/publish .
+COPY --from=build /app/publish ./
+
+ENV DOTNET_ENVIRONMENT=Production
+
 ENTRYPOINT ["dotnet", "BankMore.Tarifas.Worker.dll"]
