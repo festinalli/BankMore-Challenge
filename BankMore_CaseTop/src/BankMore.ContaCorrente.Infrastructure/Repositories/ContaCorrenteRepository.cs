@@ -114,10 +114,10 @@ namespace BankMore.ContaCorrente.Infrastructure.Repositories
 
             using var db = CreateConnection();
             const string sql = @"
-                INSERT INTO movimento 
-                    (idmovimento, idcontacorrente, numeroconta, datamovimento, tipomovimento, valor) 
-                VALUES 
-                    (@IdMovimento, @IdContaCorrente, @NumeroConta, @DataMovimento, @TipoMovimento, @Valor)";
+                INSERT INTO movimento
+                    (idmovimento, idcontacorrente, numeroconta, datamovimento, tipomovimento, valor, categoria, transferencia_id)
+                VALUES
+                    (@IdMovimento, @IdContaCorrente, @NumeroConta, @DataMovimento, @TipoMovimento, @Valor, @Categoria, @TransferenciaId)";
 
             await db.ExecuteAsync(sql, movimento);
         }

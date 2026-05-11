@@ -114,9 +114,10 @@ namespace BankMore.ContaCorrente.Application.Handlers
                 IdMovimento = Guid.NewGuid().ToString(),
                 IdContaCorrente = conta.IdContaCorrente,
                 NumeroConta = conta.Numero,
-                DataMovimento = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                DataMovimento = DateTime.UtcNow,
                 TipoMovimento = "C",
-                Valor = saldoInicial
+                Valor = saldoInicial,
+                Categoria = "SALDO_INICIAL"
             };
 
             await _repository.AdicionarMovimento(movimento);

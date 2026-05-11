@@ -1,102 +1,49 @@
 using MediatR;
 using BankMore.ContaCorrente.Application.Models;
 using BankMore.ContaCorrente.Domain.Interfaces;
-using Dapper;
-using Npgsql;
-using Microsoft.Extensions.Configuration;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using System;
 
 namespace BankMore.ContaCorrente.Application.Handlers
 {
     public record ObterExtratoQuery(string Cpf) : IRequest<ObterExtratoResponse>;
 
-    public class ObterExtratoHandler(IConfiguration configuration, IContaCorrenteRepository repository) : IRequestHandler<ObterExtratoQuery, ObterExtratoResponse>
+    /// <summary>
+    /// Retorna o extrato do titular. Saldo é calculado por SUM(movimento C - D) — fonte única.
+    /// Tarifas já estão refletidas em movimento (categoria=TARIFA), então NÃO somamos tarifa separada.
+    /// </summary>
+    public class ObterExtratoHandler(IContaCorrenteRepository repository)
+        : IRequestHandler<ObterExtratoQuery, ObterExtratoResponse>
     {
         public async Task<ObterExtratoResponse> Handle(ObterExtratoQuery request, CancellationToken cancellationToken)
         {
-            var connectionString = configuration.GetConnectionString("DefaultConnection");
-            using var connection = new NpgsqlConnection(connectionString);
-
             var conta = await repository.ObterPorCpf(request.Cpf);
             if (conta == null) return new ObterExtratoResponse();
 
-            var idConta = conta.IdContaCorrente;
-            var saldoAtual = await repository.ObterSaldo(idConta);
+            var saldo = await repository.ObterSaldo(conta.IdContaCorrente);
+            var movimentos = await repository.ObterMovimentos(conta.IdContaCorrente);
 
-            // 1. Busca Movimentos (Transferências)
-            var movimentosDb = await connection.QueryAsync<MovimentoDb>(
-                "SELECT datamovimento, tipomovimento, valor FROM movimento WHERE idcontacorrente = @Id", new { Id = idConta });
-
-            // 2. Busca Tarifas (Processadas pelo Worker)
-            var tarifasDb = await connection.QueryAsync<TarifaDb>(
-                "SELECT valor, dataprocessamento, tipotransferencia FROM tarifa WHERE idcontacorrente = @Id", new { Id = idConta });
-
-            var extrato = new List<MovimentoExtrato>();
-
-            // Mapeia Movimentos usando a lógica de negócio
-            foreach (var m in movimentosDb)
+            var extrato = movimentos.Select(m => new MovimentoExtrato
             {
-                extrato.Add(new MovimentoExtrato
-                {
-                    Data = m.DataMovimento,
-                    Tipo = m.TipoMovimento == "C" ? "Crédito" : "Débito",
-                    Valor = m.Valor,
-                    Descricao = m.TipoMovimento == "C" ? "Transferência Recebida" : "Transferência Enviada"
-                });
-            }
-
-            // Mapeia Tarifas usando os Enums/Tipos de Transferência
-            foreach (var t in tarifasDb)
-            {
-                if (t.Valor > 0)
-                {
-                    extrato.Add(new MovimentoExtrato
-                    {
-                        Data = t.DataProcessamento,
-                        Tipo = "Débito",
-                        Valor = t.Valor,
-                        Descricao = ObterDescricaoTarifa(t.TipoTransferencia)
-                    });
-                }
-            }
+                Data = m.DataMovimento.ToString("yyyy-MM-dd HH:mm:ss"),
+                Tipo = m.TipoMovimento == "C" ? "Crédito" : "Débito",
+                Valor = m.Valor,
+                Descricao = DescreverMovimento(m.Categoria, m.TipoMovimento)
+            }).ToList();
 
             return new ObterExtratoResponse
             {
                 NomeTitular = conta.Nome,
-                SaldoAtual = saldoAtual,
-                Movimentos = extrato.OrderByDescending(x => x.Data).ToList()
+                SaldoAtual = saldo,
+                Movimentos = extrato
             };
         }
 
-        // Mantendo a lógica de descrição baseada no tipo da transferência (Enum)
-        private string ObterDescricaoTarifa(int tipo)
+        private static string DescreverMovimento(string categoria, string tipo) => categoria switch
         {
-            return tipo switch
-            {
-                0 => "Tarifa Bancária - PIX",
-                1 => "Tarifa Bancária - TED",
-                2 => "Tarifa Bancária - TEF",
-                _ => "Tarifa Bancária"
-            };
-        }
-    }
-
-    // Classes de mapeamento para o Dapper (POCOs)
-    public class MovimentoDb
-    {
-        public string DataMovimento { get; set; } = string.Empty;
-        public string TipoMovimento { get; set; } = string.Empty;
-        public decimal Valor { get; set; }
-    }
-
-    public class TarifaDb
-    {
-        public decimal Valor { get; set; }
-        public string DataProcessamento { get; set; } = string.Empty;
-        public int TipoTransferencia { get; set; }
+            "SALDO_INICIAL" => "Saldo inicial",
+            "TRANSFERENCIA" => tipo == "C" ? "Transferência recebida" : "Transferência enviada",
+            "TARIFA"        => "Tarifa de transferência",
+            "MOVIMENTO"     => tipo == "C" ? "Depósito" : "Saque",
+            _               => tipo == "C" ? "Crédito" : "Débito"
+        };
     }
 }

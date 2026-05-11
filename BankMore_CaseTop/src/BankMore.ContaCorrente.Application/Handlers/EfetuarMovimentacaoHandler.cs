@@ -36,9 +36,10 @@ namespace BankMore.ContaCorrente.Application.Handlers
                 IdMovimento = Guid.NewGuid().ToString(),
                 IdContaCorrente = conta.IdContaCorrente,
                 NumeroConta = conta.Numero,
-                DataMovimento = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                DataMovimento = DateTime.UtcNow,
                 TipoMovimento = request.Tipo,
-                Valor = request.Valor
+                Valor = request.Valor,
+                Categoria = "MOVIMENTO"
             };
 
             await repository.AdicionarMovimento(movimento);
