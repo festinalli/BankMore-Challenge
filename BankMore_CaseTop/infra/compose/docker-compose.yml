@@ -244,13 +244,13 @@ services:
       Kafka__Broker: kafka:29092
     networks: [bankmore]
 
-  # Sprint 2: detector com state por CPF + 3 producers (aprovada/rejeitada/alerta).
-  # Implementação Python da MESMA topologia que o job PyFlink seria.
-  # Sprint 4 substitui pela imagem PyFlink real (Dockerfile.flink) submetida ao JM/TM.
+  # Sprint 2.5: PyFlink real (event-time + watermark + RocksDB MapState com TTL + side outputs).
+  # Mesma lógica que o detector Python validado anteriormente. Trocar de detector é só
+  # mudar o build > dockerfile entre 'Dockerfile' (Python puro) e 'Dockerfile.flink' (PyFlink).
   fraud-detector:
     build:
       context: ../../pyflink
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.flink
     container_name: bankmore-fraud-detector
     depends_on:
       kafka:
@@ -263,7 +263,7 @@ services:
       SINK_APROVADA: transferencia.aprovada
       SINK_REJEITADA: transferencia.rejeitada
       SINK_ALERTA: fraude.alerta
-      GROUP_ID: fraud-detector
+      GROUP_ID: fraud-detector-flink
       VALOR_ALTO_BRL: "10000.00"
       BURST_LIMITE_POR_MINUTO: "4"
       JANELA_BURST_SEGUNDOS: "60"

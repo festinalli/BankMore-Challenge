@@ -6,12 +6,13 @@ PSQL    := docker exec -i bankmore-postgres psql -U bankmore -d bankmore_db
 
 .PHONY: help env up down ps logs reset psql topics seed \
         run-contacorrente run-transferencia run-worker run-approver \
-        build test e2e
+        build test e2e pyflink-deps
 
 help:
 	@echo "BankMore Case Top — targets:"
 	@echo "  make env                Cria .env a partir de .env.example (se ainda não existir)"
-	@echo "  make up                 Sobe TUDO (infra + APIs + worker + auto-approver)"
+	@echo "  make pyflink-deps       Baixa o tarball de 220MB do apache-flink-libraries (1x)"
+	@echo "  make up                 Sobe TUDO (infra + APIs + worker + fraud-detector PyFlink)"
 	@echo "  make down               Derruba tudo (mantém volumes)"
 	@echo "  make reset              Derruba + apaga volumes (zera o banco)"
 	@echo "  make ps                 Status dos containers"
@@ -34,7 +35,10 @@ env:
 	@test -f .env || cp .env.example .env
 	@echo ".env pronto"
 
-up: env
+pyflink-deps:
+	@bash pyflink/fetch_pyflink_libs.sh
+
+up: env pyflink-deps
 	$(COMPOSE) up -d --build
 	@echo "Aguardando serviços ficarem saudáveis..."
 	@sleep 5

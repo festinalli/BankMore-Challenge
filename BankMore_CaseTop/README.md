@@ -1,17 +1,29 @@
 # BankMore — Real-Time Fraud Detection
 
 Sistema bancário event-driven com detecção de fraude em tempo real.
-Toda transferência passa por um detector com state por CPF, regras determinísticas e
-3 destinos (aprovada / rejeitada / alerta) **antes** de ser efetivada.
+Toda transferência passa por um job **PyFlink 1.18** com state por CPF, regras
+determinísticas e 3 destinos (aprovada / rejeitada / alerta) **antes** de ser efetivada.
 
 > **Sprint 1 done** (11/05/2026): stack 100% Docker, fluxo Solicitada → Worker.
 >
 > **Sprint 2 done** (16/05/2026): detector com state, persistência de `SOLICITADA → EFETIVADA/REJEITADA`,
 > consumer de rejeições, 4 cenários e2e validados (feliz / auto-transf / valor alto / burst).
-> Detector hoje em Python puro (mesma topologia que o job PyFlink seria — wheel apache-flink
-> dando timeout no PyPI; swap para PyFlink real fica reservado pra Sprint 4 sem mudar contrato).
+>
+> **Sprint 2.5 done** (16/05/2026): **PyFlink real** rodando. JVM Flink mini-cluster +
+> `KeyedProcessFunction` + `MapState` com TTL + event-time/watermark +
+> checkpoint EXACTLY_ONCE em RocksDB a cada 60s (validado: 7 checkpoints completos em log).
+> Mesmos tópicos e regras do detector Python anterior — `make e2e` passa contra PyFlink.
 >
 > ML real e schemas Avro: Sprint 3.
+
+## Como rodar (do zero)
+
+```bash
+make pyflink-deps     # baixa apache-flink-libraries (220MB) no host — só na 1ª vez
+make up               # builda imagens (PyFlink + .NET) e sobe os 12 containers
+make seed             # cria Alice (R$10k) e Bob (R$500)
+make e2e              # 4 cenários: feliz, auto-transf, valor alto (alerta), burst
+```
 
 ## Como rodar (1 comando)
 
@@ -126,23 +138,27 @@ A `transferencia` no Postgres é a fonte de verdade do status:
 | 19 | `ObterExtratoHandlerTests` quebrado | ✅ 9/9 testes verdes |
 | 20 | enum `TipoTransferencia` aceitava só int | ✅ `JsonStringEnumConverter` (PIX/TED/TEF) |
 
-## Sprint 2 (done)
+## Sprint 2 + 2.5 (done)
 
-- ✅ Detector com state (rolling window 60s por CPF) — `pyflink/fraud_detector.py`
+- ✅ Detector com state (rolling window 60s por CPF) — `pyflink/fraud_detector.py` (Python) e `pyflink/fraud_detector_job.py` (PyFlink real, em uso)
+- ✅ **PyFlink 1.18** com event-time + watermark 5s + RocksDB state + checkpoint EXACTLY_ONCE
 - ✅ Persistência da `transferencia.status` no Postgres (SOLICITADA → EFETIVADA/REJEITADA)
 - ✅ `RejeicaoConsumer` no Worker fecha o ciclo de status
 - ✅ 4 cenários no `make e2e`: feliz, auto-transf, valor alto (ALERTA), burst (BURST_*)
 
-**Pivot de Sprint 2 (assumido):** o wheel `apache-flink` (~350MB) deu read-timeout
-consistentemente no PyPI. Implementei o detector em Python puro com a **mesma topologia
-e contrato** que o job PyFlink teria. O swap futuro é local — não muda eventos nem
-consumers. Estrutura PyFlink (`fraud_detector_job.py`, `Dockerfile.flink`) versionada
-para uso no Sprint 4.
+### Diagnóstico da virada de chave do PyFlink (anotado pra próxima)
+
+Três problemas em série tiveram que cair pra subir o job:
+
+| Sintoma | Causa real | Solução |
+|---|---|---|
+| `pip install apache-flink` timeout no daemon Docker | dep `apache-flink-libraries` é 220MB sdist (apache-flink em si é 6MB) | Download no host (`make pyflink-deps`, ~6s @ 32MB/s) + `COPY` no Dockerfile |
+| `pemja` falha em "Include folder should be at /opt/java/openjdk/include but doesn't exist" | imagem flink:1.18 tem só JRE, `pemja` compila contra JDK | `apt-get install openjdk-11-jdk-headless` + linkar `jni.h` no JRE |
+| `'InternalKeyedProcessFunctionContext' object has no attribute 'output'` | PyFlink 1.18 Python tem bug em side outputs com `KeyedProcessFunction` | `yield` no operator + `.filter()` downstream pra rotear |
 
 ## O que ainda não está pronto (Sprints 3+)
 
-- ❌ PyFlink real (job em RocksDB + checkpoint exactly-once + Async I/O para ML)
-- ❌ Avro + Schema Registry — Sprint 2 ainda usa JSON
+- ❌ Avro + Schema Registry — hoje JSON
 - ❌ Modelo de ML treinado (`ml/train.ipynb`)
 - ❌ Validação de saldo (transferir mais que tem ainda passa — Worker debita negativo)
 - ❌ PasswordHasher PBKDF2 (hoje SHA-256)
@@ -151,6 +167,7 @@ para uso no Sprint 4.
 - ❌ Prometheus + Grafana + Jaeger
 - ❌ Frontend ainda fora do compose (rodar `cd frontend && ng serve` manual)
 - ❌ Outbox pattern para garantir atomicidade entre persistir e publicar
+- ❌ PyFlink submetido ao cluster JM/TM externo (hoje em local-mode dentro do container)
 
 Mapeado em [`CASE_TOP_PLAN.md`](CASE_TOP_PLAN.md).
 
