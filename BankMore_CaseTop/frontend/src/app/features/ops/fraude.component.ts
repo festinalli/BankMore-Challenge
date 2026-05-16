@@ -1,4 +1,4 @@
-import { Component, NgZone, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -25,21 +25,22 @@ interface FraudeEvento {
   selector: 'app-fraude-ops',
   standalone: true,
   imports: [CommonModule, FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="ops-container">
       <nav class="navbar">
         <div class="navbar-brand">
           <h1>BankMore — Ops/Fraude</h1>
-          <span class="badge" [class.online]="conectado" [class.offline]="!conectado">
-            {{ conectado ? '● ao vivo' : '○ desconectado' }}
+          <span class="badge" [class.online]="conectado()" [class.offline]="!conectado()">
+            {{ conectado() ? '● ao vivo' : '○ desconectado' }}
           </span>
         </div>
         <div class="navbar-menu">
           <label>
-            <input type="checkbox" [(ngModel)]="filtroAlerta" /> Alertas
+            <input type="checkbox" [checked]="filtroAlerta()" (change)="filtroAlerta.set(!!$any($event.target).checked)" /> Alertas
           </label>
           <label>
-            <input type="checkbox" [(ngModel)]="filtroRejeitada" /> Rejeitadas
+            <input type="checkbox" [checked]="filtroRejeitada()" (change)="filtroRejeitada.set(!!$any($event.target).checked)" /> Rejeitadas
           </label>
           <button class="btn-clear" (click)="limpar()">Limpar</button>
         </div>
@@ -49,15 +50,15 @@ interface FraudeEvento {
         <div class="stats">
           <div class="stat-card">
             <span class="stat-label">Alertas</span>
-            <span class="stat-value alerta">{{ contarPorEvento('ALERTA') }}</span>
+            <span class="stat-value alerta">{{ contadores().alerta }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-label">Rejeições</span>
-            <span class="stat-value rejeitada">{{ contarPorEvento('REJEITADA') }}</span>
+            <span class="stat-value rejeitada">{{ contadores().rejeitada }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-label">Total recebido</span>
-            <span class="stat-value">{{ eventos.length }}</span>
+            <span class="stat-value">{{ eventos().length }}</span>
           </div>
         </div>
 
@@ -164,59 +165,52 @@ interface FraudeEvento {
   `]
 })
 export class FraudeOpsComponent implements OnInit, OnDestroy {
-  eventos: FraudeEvento[] = [];
-  conectado = false;
-  filtroAlerta = true;
-  filtroRejeitada = true;
+  // Sob zoneless, EventSource handlers atualizam signals diretamente — change detection
+  // dispara automaticamente sem precisar de NgZone.run().
+  readonly eventos = signal<FraudeEvento[]>([]);
+  readonly conectado = signal(false);
+  readonly filtroAlerta = signal(true);
+  readonly filtroRejeitada = signal(true);
+
+  readonly eventosFiltrados = computed(() =>
+    this.eventos().filter(e =>
+      (e.evento === 'ALERTA' && this.filtroAlerta()) ||
+      (e.evento === 'REJEITADA' && this.filtroRejeitada())
+    )
+  );
+
+  readonly contadores = computed(() => {
+    let alerta = 0, rejeitada = 0;
+    for (const e of this.eventos()) {
+      if (e.evento === 'ALERTA') alerta++;
+      else if (e.evento === 'REJEITADA') rejeitada++;
+    }
+    return { alerta, rejeitada };
+  });
 
   private es?: EventSource;
   private readonly maxEventos = 50;
   private readonly streamUrl = 'http://localhost:5000/api/admin/fraude/stream';
 
-  constructor(private zone: NgZone) {}
-
-  ngOnInit(): void {
-    this.conectar();
-  }
-
-  ngOnDestroy(): void {
-    this.es?.close();
-  }
+  ngOnInit(): void { this.conectar(); }
+  ngOnDestroy(): void { this.es?.close(); }
 
   private conectar(): void {
     this.es = new EventSource(this.streamUrl);
-
-    this.es.onopen = () => this.zone.run(() => { this.conectado = true; });
-    this.es.onerror = () => this.zone.run(() => { this.conectado = false; });
-
-    this.es.onmessage = (msg) => this.zone.run(() => {
+    this.es.onopen = () => this.conectado.set(true);
+    this.es.onerror = () => this.conectado.set(false);
+    this.es.onmessage = (msg) => {
       try {
         const evt = JSON.parse(msg.data) as FraudeEvento;
-        this.eventos = [evt, ...this.eventos].slice(0, this.maxEventos);
-      } catch {
-        // payload malformado — ignora
-      }
-    });
+        this.eventos.update(list => [evt, ...list].slice(0, this.maxEventos));
+      } catch { /* payload malformado — ignora */ }
+    };
   }
 
-  eventosFiltrados(): FraudeEvento[] {
-    return this.eventos.filter(e =>
-      (e.evento === 'ALERTA' && this.filtroAlerta) ||
-      (e.evento === 'REJEITADA' && this.filtroRejeitada)
-    );
-  }
-
-  contarPorEvento(tipo: 'ALERTA' | 'REJEITADA'): number {
-    return this.eventos.filter(e => e.evento === tipo).length;
-  }
-
-  limpar(): void {
-    this.eventos = [];
-  }
+  limpar(): void { this.eventos.set([]); }
 
   shortId(id: string | undefined): string {
-    if (!id) return '—';
-    return id.slice(0, 8);
+    return id ? id.slice(0, 8) : '—';
   }
 
   mascararCpf(cpf: string | undefined): string {
@@ -230,8 +224,7 @@ export class FraudeOpsComponent implements OnInit, OnDestroy {
   }
 
   formatarScore(score: number | undefined): string {
-    if (score == null) return '—';
-    return score.toFixed(3);
+    return score == null ? '—' : score.toFixed(3);
   }
 
   formatarHora(iso: string | undefined): string {

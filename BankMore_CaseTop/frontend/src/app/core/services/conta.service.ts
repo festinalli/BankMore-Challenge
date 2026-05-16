@@ -17,9 +17,6 @@ export interface MovimentoExtrato {
   descricao: string;
 }
 
-// Compat alias usado pelo extrato.component (legado, schema divergente). Não usar em código novo.
-export type Movimento = any;
-
 export interface ExtratoResponse {
   nomeTitular: string;
   saldoAtual: number;

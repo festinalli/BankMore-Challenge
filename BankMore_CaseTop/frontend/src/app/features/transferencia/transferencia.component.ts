@@ -1,295 +1,176 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators, AbstractControl } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
-import { AuthService, User } from '../../core/services/auth.service';
+import { AuthService, User, normalizarCpf, validarCpf } from '../../core/services/auth.service';
 import { ContaService } from '../../core/services/conta.service';
 import { TransferenciaService } from '../../core/services/transferencia.service';
-import { ButtonComponent } from '../../shared/components/button/button.component';
-import { InputComponent } from '../../shared/components/input/input.component';
-import { CurrencyBrlPipe } from '../../shared/pipes/currency-brl.pipe';
 
 @Component({
   selector: 'app-transferencia',
   standalone: true,
-  imports: [
-    CommonModule,
-    FormsModule,
-    ReactiveFormsModule,
-    ButtonComponent,
-    InputComponent,
-    CurrencyBrlPipe
-  ],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="transferencia-container">
-      <nav class="navbar">
-        <div class="navbar-brand">
-          <h1>BankMore</h1>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <button class="back-btn" (click)="voltar()">← Voltar</button>
+          <div class="brand">
+            <div class="brand-mark">B</div>
+            <span class="brand-name">Transferir</span>
+          </div>
+          <button class="icon-btn" (click)="logout()" title="Sair">↪</button>
         </div>
-        <div class="navbar-menu">
-          <button class="btn-back" (click)="voltar()">← Voltar</button>
-          <button class="btn-logout" (click)="logout()">Sair</button>
-        </div>
-      </nav>
+      </header>
 
-      <div class="transferencia-content">
-        <div class="card">
-          <h2>Realizar Transferência</h2>
-          
-          <div class="saldo-info">
-            <p>Saldo disponível: {{ saldo | currencyBrl }}</p>
+      <main class="app-main">
+        <div class="saldo-pill">
+          <span class="saldo-label">Saldo disponível</span>
+          <span class="saldo-valor">R$ {{ formatarBrl(saldo()) }}</span>
+        </div>
+
+        <form class="card" [formGroup]="form" (ngSubmit)="onSubmit()">
+          <h1 class="card-title">Nova transferência</h1>
+
+          <div class="form-group">
+            <label>Tipo</label>
+            <div class="tipo-grid">
+              <label class="tipo-option" [class.selected]="form.get('tipo')?.value === 'PIX'">
+                <input type="radio" formControlName="tipo" value="PIX" />
+                <div class="tipo-icon">⚡</div>
+                <div class="tipo-name">PIX</div>
+                <div class="tipo-fee">grátis</div>
+              </label>
+              <label class="tipo-option" [class.selected]="form.get('tipo')?.value === 'TED'">
+                <input type="radio" formControlName="tipo" value="TED" />
+                <div class="tipo-icon">🏦</div>
+                <div class="tipo-name">TED</div>
+                <div class="tipo-fee">R$ 4,00</div>
+              </label>
+              <label class="tipo-option" [class.selected]="form.get('tipo')?.value === 'TEF'">
+                <input type="radio" formControlName="tipo" value="TEF" />
+                <div class="tipo-icon">💳</div>
+                <div class="tipo-name">TEF</div>
+                <div class="tipo-fee">R$ 1,00</div>
+              </label>
+            </div>
+            <small *ngIf="invalid('tipo')" class="error-text">Escolha um tipo</small>
           </div>
 
-          <form [formGroup]="transferenciaForm" (ngSubmit)="onSubmit()">
-            <div class="form-group">
-              <label for="cpf-destino">CPF do Destinatário</label>
-              <input
-                id="cpf-destino"
-                type="text"
-                placeholder="000.000.000-00"
-                formControlName="cpfDestino"
-                class="form-control"
-              />
-              <small *ngIf="transferenciaForm.get('cpfDestino')?.invalid && transferenciaForm.get('cpfDestino')?.touched" class="error-text">
-                CPF é obrigatório
-              </small>
-            </div>
+          <div class="form-group">
+            <label for="cpf-destino">CPF do destinatário</label>
+            <input id="cpf-destino" type="text" placeholder="000.000.000-00"
+                   maxlength="14" formControlName="cpfDestino"
+                   (input)="formatarCpf($event)" class="form-control" />
+            <small *ngIf="invalid('cpfDestino')" class="error-text">CPF inválido (dígitos verificadores)</small>
+          </div>
 
-            <div class="form-group">
-              <label for="valor">Valor</label>
-              <input
-                id="valor"
-                type="number"
-                placeholder="0,00"
-                formControlName="valor"
-                class="form-control"
-              />
-              <small *ngIf="transferenciaForm.get('valor')?.invalid && transferenciaForm.get('valor')?.touched" class="error-text">
-                Valor deve ser maior que 0
-              </small>
-            </div>
+          <div class="form-group">
+            <label for="valor">Valor (R$)</label>
+            <input id="valor" type="number" step="0.01" min="0.01" placeholder="0,00"
+                   formControlName="valor" class="form-control form-control-big" />
+            <small *ngIf="invalid('valor')" class="error-text">Valor deve ser maior que 0</small>
+          </div>
 
-            <div class="form-group">
-              <label for="tipo">Tipo de Transferência</label>
-              <select formControlName="tipo" class="form-control">
-                <option value="">Selecione...</option>
-                <option value="PIX">PIX (sem tarifa)</option>
-                <option value="TED">TED (tarifa R$ 4,00)</option>
-                <option value="TEF">TEF (tarifa R$ 1,00)</option>
-              </select>
-              <small *ngIf="transferenciaForm.get('tipo')?.invalid && transferenciaForm.get('tipo')?.touched" class="error-text">
-                Tipo é obrigatório
-              </small>
-            </div>
+          <div *ngIf="errorMessage()" class="alert alert-danger">{{ errorMessage() }}</div>
+          <div *ngIf="successMessage()" class="alert alert-success">{{ successMessage() }}</div>
 
-            <div *ngIf="errorMessage" class="alert alert-danger">
-              {{ errorMessage }}
-            </div>
+          <button type="submit" [disabled]="form.invalid || isLoading()" class="btn btn-primary">
+            {{ isLoading() ? 'Enviando…' : 'Transferir' }}
+          </button>
 
-            <div *ngIf="successMessage" class="alert alert-success">
-              {{ successMessage }}
-            </div>
-
-            <button
-              type="submit"
-              [disabled]="transferenciaForm.invalid || isLoading"
-              class="btn btn-primary btn-block"
-            >
-              {{ isLoading ? 'Processando...' : 'Transferir' }}
-            </button>
-          </form>
-        </div>
-      </div>
+          <p class="hint">
+            Toda transferência passa pelo motor antifraude em tempo real.<br>
+            Apenas saiu da sua conta após aprovação — você verá em <em>Atividade recente</em>.
+          </p>
+        </form>
+      </main>
     </div>
   `,
   styles: [`
-    .transferencia-container {
-      min-height: 100vh;
-      background-color: #f5f5f5;
-    }
-
-    .navbar {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 20px 40px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-
-    .navbar-brand h1 {
-      margin: 0;
-      font-size: 24px;
-    }
-
-    .navbar-menu {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-    }
-
-    .btn-back, .btn-logout {
-      background-color: rgba(255, 255, 255, 0.2);
-      color: white;
-      border: 1px solid white;
-      padding: 8px 16px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 14px;
-      transition: all 0.3s ease;
-    }
-
-    .btn-back:hover, .btn-logout:hover {
-      background-color: rgba(255, 255, 255, 0.3);
-    }
-
-    .transferencia-content {
-      padding: 40px;
-      max-width: 600px;
-      margin: 0 auto;
-    }
-
-    .card {
-      background: white;
-      border-radius: 8px;
-      padding: 30px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .card h2 {
-      margin-top: 0;
-      color: #333;
-      margin-bottom: 20px;
-    }
-
-    .saldo-info {
-      background-color: #f0f7ff;
-      padding: 16px;
-      border-radius: 4px;
-      margin-bottom: 20px;
-      border-left: 4px solid #667eea;
-    }
-
-    .saldo-info p {
-      margin: 0;
-      color: #333;
-      font-weight: 600;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    label {
-      margin-bottom: 8px;
-      font-weight: 600;
-      color: #333;
-    }
-
-    .form-control {
-      padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 14px;
-      transition: border-color 0.3s ease;
-    }
-
-    .form-control:focus {
-      outline: none;
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-
-    .error-text {
-      color: #dc3545;
-      margin-top: 4px;
-      font-size: 12px;
-    }
-
-    .alert {
-      padding: 12px;
-      border-radius: 4px;
-      margin-bottom: 20px;
-      font-size: 14px;
-    }
-
-    .alert-danger {
-      background-color: #f8d7da;
-      color: #721c24;
-      border: 1px solid #f5c6cb;
-    }
-
-    .alert-success {
-      background-color: #d4edda;
-      color: #155724;
-      border: 1px solid #c3e6cb;
-    }
-
-    .btn {
-      padding: 12px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 16px;
-      font-weight: 600;
-      transition: all 0.3s ease;
-      width: 100%;
-    }
-
-    .btn-primary {
-      background-color: #667eea;
-      color: white;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      background-color: #5568d3;
-    }
-
-    .btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .btn-block {
-      width: 100%;
-    }
+    :host { display: block; }
+    * { box-sizing: border-box; }
+    .app-shell { min-height: 100vh; background: #f5f7fb;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; color: #1a1a1a; }
+    .topbar { background: white; border-bottom: 1px solid #ececf0; position: sticky; top: 0; z-index: 10; }
+    .topbar-inner { max-width: 720px; margin: 0 auto; padding: 14px 20px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .back-btn { background: transparent; border: none; color: #4338ca; font-weight: 600;
+      cursor: pointer; padding: 6px 10px; border-radius: 6px; font-size: 14px; }
+    .back-btn:hover { background: #f0f4ff; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-mark { width: 32px; height: 32px; border-radius: 8px;
+      background: linear-gradient(135deg, #667eea, #764ba2); color: white;
+      display: flex; align-items: center; justify-content: center; font-weight: 700; }
+    .brand-name { font-weight: 700; font-size: 16px; }
+    .icon-btn { background: transparent; border: none; cursor: pointer; font-size: 18px;
+      width: 36px; height: 36px; border-radius: 50%; color: #666; }
+    .icon-btn:hover { background: #f5f5f5; }
+    .app-main { max-width: 560px; margin: 0 auto; padding: 24px 20px 60px;
+      display: flex; flex-direction: column; gap: 18px; }
+    .saldo-pill { background: white; padding: 14px 18px; border-radius: 14px;
+      border: 1px solid #ececf0; display: flex; justify-content: space-between; align-items: center; }
+    .saldo-label { color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
+    .saldo-valor { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 16px; }
+    .card { background: white; border-radius: 18px; padding: 28px 24px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 20px; }
+    .card-title { margin: 0; font-size: 20px; font-weight: 700; }
+    .form-group { display: flex; flex-direction: column; gap: 8px; }
+    label { font-weight: 600; color: #374151; font-size: 13px; }
+    .form-control { padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 10px;
+      font-size: 14px; font-family: inherit; transition: border-color 0.2s; }
+    .form-control:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12); }
+    .form-control-big { font-size: 22px; font-weight: 700; padding: 14px; font-variant-numeric: tabular-nums; }
+    .error-text { color: #dc2626; font-size: 12px; }
+    .tipo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .tipo-option { position: relative; border: 1.5px solid #e5e7eb; border-radius: 12px;
+      padding: 14px 8px; text-align: center; cursor: pointer; transition: all 0.15s; }
+    .tipo-option input { position: absolute; opacity: 0; pointer-events: none; }
+    .tipo-option:hover { border-color: #c7d2fe; }
+    .tipo-option.selected { border-color: #667eea; background: #f0f4ff; }
+    .tipo-icon { font-size: 22px; margin-bottom: 4px; }
+    .tipo-name { font-weight: 700; font-size: 13px; }
+    .tipo-fee { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+    .tipo-option.selected .tipo-fee { color: #4338ca; }
+    .btn { padding: 14px; border: none; border-radius: 10px; cursor: pointer;
+      font-size: 15px; font-weight: 700; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+    .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 16px rgba(102,126,234,0.3); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .alert { padding: 12px 16px; border-radius: 10px; font-size: 13px; }
+    .alert-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+    .hint { margin: 0; color: #9ca3af; font-size: 12px; line-height: 1.5; text-align: center; }
   `]
 })
 export class TransferenciaComponent implements OnInit, OnDestroy {
-  transferenciaForm: FormGroup;
-  currentUser: User | null = null;
-  saldo: number = 0;
-  errorMessage = '';
-  successMessage = '';
-  isLoading = false;
-  private destroy$ = new Subject<void>();
+  private readonly fb = inject(FormBuilder);
+  private readonly authService = inject(AuthService);
+  private readonly contaService = inject(ContaService);
+  private readonly transferenciaService = inject(TransferenciaService);
+  private readonly router = inject(Router);
 
-  constructor(
-    private formBuilder: FormBuilder,
-    private authService: AuthService,
-    private contaService: ContaService,
-    private transferenciaService: TransferenciaService,
-    private router: Router
-  ) {
-    this.transferenciaForm = this.formBuilder.group({
-      cpfDestino: ['', [Validators.required]],
-      valor: ['', [Validators.required, Validators.min(0.01)]],
-      tipo: ['', [Validators.required]]
-    });
-  }
+  readonly currentUser = signal<User | null>(null);
+  readonly saldo = signal(0);
+  readonly errorMessage = signal('');
+  readonly successMessage = signal('');
+  readonly isLoading = signal(false);
+
+  readonly form: FormGroup = this.fb.group({
+    cpfDestino: ['', [Validators.required, this.cpfValidator]],
+    valor: ['', [Validators.required, Validators.min(0.01)]],
+    tipo: ['PIX', [Validators.required]]
+  });
+
+  private readonly destroy$ = new Subject<void>();
 
   ngOnInit(): void {
-    this.currentUser = this.authService.getCurrentUser();
-    if (!this.currentUser) {
-      this.router.navigate(['/login']);
-      return;
-    }
-
+    const user = this.authService.getCurrentUser();
+    if (!user) { this.router.navigate(['/login']); return; }
+    this.currentUser.set(user);
     this.loadSaldo();
   }
 
@@ -298,63 +179,69 @@ export class TransferenciaComponent implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
-  loadSaldo(): void {
-    if (!this.currentUser) return;
+  cpfValidator(control: AbstractControl) {
+    return validarCpf(control.value) ? null : { cpfInvalido: true };
+  }
 
+  invalid(name: string): boolean {
+    const c = this.form.get(name);
+    return !!(c && c.invalid && (c.touched || c.dirty));
+  }
+
+  formatarCpf(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const digits = normalizarCpf(input.value).slice(0, 11);
+    let out = digits;
+    if (digits.length > 3)  out = digits.slice(0, 3) + '.' + digits.slice(3);
+    if (digits.length > 6)  out = digits.slice(0, 3) + '.' + digits.slice(3, 6) + '.' + digits.slice(6);
+    if (digits.length > 9)  out = digits.slice(0, 3) + '.' + digits.slice(3, 6) + '.' + digits.slice(6, 9) + '-' + digits.slice(9);
+    input.value = out;
+    this.form.get('cpfDestino')?.setValue(out, { emitEvent: true });
+  }
+
+  loadSaldo(): void {
     this.contaService.obterSaldo()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (response) => {
-          this.saldo = response.saldo;
-        },
-        error: (error) => {
-          this.errorMessage = 'Erro ao carregar saldo';
-        }
+        next: r => this.saldo.set(r.saldo),
+        error: () => this.errorMessage.set('Erro ao carregar saldo')
       });
   }
 
   onSubmit(): void {
-    if (this.transferenciaForm.invalid) {
-      return;
-    }
+    if (this.form.invalid) return;
+    this.isLoading.set(true);
+    this.errorMessage.set('');
+    this.successMessage.set('');
 
-    this.isLoading = true;
-    this.errorMessage = '';
-    this.successMessage = '';
-
-    const formValue = this.transferenciaForm.value;
-    // CPF origem NÃO vai mais no body — backend pega do JWT.
+    const v = this.form.value;
     const payload = {
-      cpfDestino: formValue.cpfDestino,
-      tipo: formValue.tipo as 'PIX' | 'TED' | 'TEF',
-      valor: parseFloat(formValue.valor)
+      cpfDestino: normalizarCpf(v.cpfDestino),
+      tipo: v.tipo as 'PIX' | 'TED' | 'TEF',
+      valor: parseFloat(v.valor)
     };
 
     this.transferenciaService.efetuar(payload)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (response) => {
-          this.successMessage = `Transferência aceita — protocolo ${response.id.slice(0, 8)}. Análise de fraude em andamento.`;
-          this.transferenciaForm.reset();
-          // O saldo só atualiza quando o Worker efetivar (após PyFlink aprovar)
+        next: response => {
+          this.successMessage.set(`Transferência aceita — protocolo ${response.id.slice(0, 8)}. Análise antifraude em andamento.`);
+          this.form.reset({ tipo: 'PIX', valor: '', cpfDestino: '' });
           setTimeout(() => this.loadSaldo(), 2000);
-          this.isLoading = false;
-
-          setTimeout(() => this.router.navigate(['/dashboard']), 3000);
+          this.isLoading.set(false);
+          setTimeout(() => this.router.navigate(['/dashboard']), 2800);
         },
-        error: (error) => {
-          this.errorMessage = error.message || 'Erro ao realizar transferência';
-          this.isLoading = false;
+        error: err => {
+          this.errorMessage.set(err.message || 'Erro ao realizar transferência');
+          this.isLoading.set(false);
         }
       });
   }
 
-  voltar(): void {
-    this.router.navigate(['/dashboard']);
-  }
+  voltar(): void { this.router.navigate(['/dashboard']); }
+  logout(): void { this.authService.logout(); this.router.navigate(['/login']); }
 
-  logout(): void {
-    this.authService.logout();
-    this.router.navigate(['/login']);
+  formatarBrl(v: number): string {
+    return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
   }
 }

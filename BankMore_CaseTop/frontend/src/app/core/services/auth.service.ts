@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, throwError } from 'rxjs';
-import { tap, catchError } from 'rxjs/operators';
+import { tap, catchError, switchMap } from 'rxjs/operators';
 
 export interface LoginRequest {
   cpf: string;
@@ -14,10 +14,52 @@ export interface LoginResponse {
   numeroConta: number;
 }
 
+export interface RegisterRequest {
+  nome: string;
+  cpf: string;
+  senha: string;
+  saldoInicial: number;
+}
+
+export interface RegisterResponse {
+  idContaCorrente: string;
+  numeroConta: number;
+  nomeTitular: string;
+  cpf: string;
+}
+
 export interface User {
   cpf: string;
   nomeTitular: string;
   numeroConta: number;
+}
+
+/** Remove tudo que não é dígito — backend espera CPF puro de 11 chars. */
+export function normalizarCpf(cpf: string): string {
+  return (cpf || '').replace(/\D/g, '');
+}
+
+/**
+ * Valida CPF brasileiro com os 2 dígitos verificadores.
+ * Rejeita: tamanho != 11, todos iguais (000…, 111…), DV incorreto.
+ * Algoritmo oficial da Receita Federal.
+ */
+export function validarCpf(cpf: string | null | undefined): boolean {
+  const c = normalizarCpf(cpf || '');
+  if (c.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(c)) return false;
+
+  const calcDigit = (slice: string, factor: number): number => {
+    let sum = 0;
+    for (let i = 0; i < slice.length; i++) sum += parseInt(slice[i], 10) * (factor - i);
+    const rest = (sum * 10) % 11;
+    return rest === 10 ? 0 : rest;
+  };
+
+  const d1 = calcDigit(c.slice(0, 9), 10);
+  if (d1 !== parseInt(c[9], 10)) return false;
+  const d2 = calcDigit(c.slice(0, 10), 11);
+  return d2 === parseInt(c[10], 10);
 }
 
 @Injectable({
@@ -41,15 +83,16 @@ export class AuthService {
    * @returns Observable com os dados do usuário e token
    */
   login(credentials: LoginRequest): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>(`${this.apiUrl}/login`, credentials)
+    const cpf = normalizarCpf(credentials.cpf);
+    return this.http.post<LoginResponse>(`${this.apiUrl}/login`, { cpf, senha: credentials.senha })
       .pipe(
         tap(response => {
           // Salvar token no localStorage
           localStorage.setItem('token', response.token);
-          
+
           // Atualizar o usuário atual
           const user: User = {
-            cpf: credentials.cpf,
+            cpf,
             nomeTitular: response.nomeTitular,
             numeroConta: response.numeroConta
           };
@@ -59,9 +102,34 @@ export class AuthService {
         }),
         catchError(error => {
           console.error('Erro ao fazer login:', error);
-          return throwError(() => new Error(error.error?.mensagem || 'Erro ao fazer login'));
+          const msg = error.error?.mensagem || (error.status === 401
+            ? 'CPF ou senha incorretos.'
+            : 'Erro ao fazer login.');
+          return throwError(() => new Error(msg));
         })
       );
+  }
+
+  /**
+   * Cadastra uma conta nova e, no sucesso, executa login automático.
+   * Backend: POST /api/contacorrente/criar → /login.
+   */
+  register(data: RegisterRequest): Observable<LoginResponse> {
+    const cpf = normalizarCpf(data.cpf);
+    const payload = {
+      nome: data.nome.trim(),
+      cpf,
+      senha: data.senha,
+      saldoInicial: Math.max(0, data.saldoInicial || 0)
+    };
+    return this.http.post<RegisterResponse>(`${this.apiUrl}/criar`, payload).pipe(
+      catchError(error => {
+        const msg = error.error?.mensagem ||
+          (error.status === 409 ? 'CPF já cadastrado.' : 'Erro ao cadastrar conta.');
+        return throwError(() => new Error(msg));
+      }),
+      switchMap(() => this.login({ cpf, senha: data.senha }))
+    );
   }
 
   /**
