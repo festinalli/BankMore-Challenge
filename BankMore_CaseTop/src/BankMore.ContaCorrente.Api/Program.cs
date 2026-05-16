@@ -1,3 +1,4 @@
+using BankMore.ContaCorrente.Api.Middleware;
 using BankMore.ContaCorrente.Application.Handlers;
 using BankMore.ContaCorrente.Application.Services;
 using BankMore.ContaCorrente.Domain.Interfaces;
@@ -85,6 +86,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+app.UseMiddleware<ExceptionMiddleware>();
 app.UseCors("DefaultPolicy");
 app.UseSwagger();
 app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "BankMore Conta Corrente V1"));

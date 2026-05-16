@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -10,6 +11,14 @@ namespace BankMore.ContaCorrente.Api.Controllers;
 [Route("api/admin/fraude")]
 public class FraudeOpsController : ControllerBase
 {
+    // DoS protection: cada SSE conexão abre 2 consumers Kafka — limitar paralelismo total.
+    // 50 = trade-off razoável pra v1 (suficiente pra time de ops + alguns observadores).
+    // Sprint 5: rate limit por user role=ops via IDistributedRateLimit (Redis).
+    private const int MaxConcurrentConnections = 50;
+    private const int MaxConnectionsPerIp = 5;
+    private static readonly SemaphoreSlim GlobalSlots = new(MaxConcurrentConnections, MaxConcurrentConnections);
+    private static readonly ConcurrentDictionary<string, int> ConnectionsPerIp = new();
+
     private readonly IConfiguration _config;
     private readonly ILogger<FraudeOpsController> _logger;
 
@@ -26,6 +35,41 @@ public class FraudeOpsController : ControllerBase
     // janela de 10min mantida em memória + auth role=ops.
     [HttpGet("stream")]
     public async Task Stream(CancellationToken clientCt)
+    {
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        // Rate limit per IP: rejeita ANTES de tomar o slot global
+        var current = ConnectionsPerIp.AddOrUpdate(clientIp, 1, (_, v) => v + 1);
+        if (current > MaxConnectionsPerIp)
+        {
+            ConnectionsPerIp.AddOrUpdate(clientIp, 0, (_, v) => Math.Max(0, v - 1));
+            Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            await Response.WriteAsync($"Rate limit excedido: máximo {MaxConnectionsPerIp} conexões SSE por IP.", clientCt);
+            return;
+        }
+
+        // Slot global (cap absoluto pra proteger Kafka)
+        if (!await GlobalSlots.WaitAsync(0, clientCt))
+        {
+            ConnectionsPerIp.AddOrUpdate(clientIp, 0, (_, v) => Math.Max(0, v - 1));
+            Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            Response.Headers["Retry-After"] = "10";
+            await Response.WriteAsync($"Capacidade temporariamente esgotada (máx {MaxConcurrentConnections} conexões simultâneas).", clientCt);
+            return;
+        }
+
+        try
+        {
+            await DoStream(clientCt);
+        }
+        finally
+        {
+            GlobalSlots.Release();
+            ConnectionsPerIp.AddOrUpdate(clientIp, 0, (_, v) => Math.Max(0, v - 1));
+        }
+    }
+
+    private async Task DoStream(CancellationToken clientCt)
     {
         var broker = _config["Kafka:Broker"]
             ?? Environment.GetEnvironmentVariable("Kafka__Broker")

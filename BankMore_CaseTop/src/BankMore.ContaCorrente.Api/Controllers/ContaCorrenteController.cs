@@ -7,69 +7,37 @@ using Microsoft.AspNetCore.Mvc;
 namespace BankMore.ContaCorrente.Api.Controllers
 {
     [ApiController]
-    [Authorize]                       // <- exige JWT em TODO endpoint da classe...
+    [Authorize]                       // Exige JWT em TODO endpoint da classe — exceto os marcados.
     [Route("api/[controller]")]
-    public class ContaCorrenteController(IMediator mediator, ILogger<ContaCorrenteController> logger) : ControllerBase
+    public class ContaCorrenteController(IMediator mediator) : ControllerBase
     {
+        // Sem try/catch: ExceptionMiddleware global mapeia ArgumentException → 400,
+        // InvalidOperationException → 409, etc. Controller fica focado em orquestrar.
+
         [HttpPost("criar")]
-        [AllowAnonymous]              // ...exceto cadastro
+        [AllowAnonymous]
         public async Task<IActionResult> Cadastrar([FromBody] CadastrarContaCommand command)
-        {
-            try
-            {
-                var resultado = await mediator.Send(command);
-                return Ok(resultado);
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { mensagem = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Conflict(new { mensagem = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Erro inesperado ao cadastrar conta");
-                return StatusCode(500, new { mensagem = "Erro inesperado ao cadastrar a conta" });
-            }
-        }
+            => Ok(await mediator.Send(command));
 
         [HttpPost("login")]
-        [AllowAnonymous]              // ...e login
+        [AllowAnonymous]
         public async Task<IActionResult> Login([FromBody] LoginCommand command)
         {
             var resultado = await mediator.Send(command);
-
-            if (resultado is null || !resultado.Autenticado)
-                return Unauthorized(new { mensagem = resultado?.Mensagem ?? "Falha na autenticação" });
-
-            return Ok(resultado);
+            return resultado is { Autenticado: true }
+                ? Ok(resultado)
+                : Unauthorized(new { mensagem = resultado?.Mensagem ?? "Falha na autenticação" });
         }
 
         /// <summary>Saldo do usuário autenticado (CPF vem do JWT, NÃO da URL).</summary>
         [HttpGet("saldo")]
         public async Task<IActionResult> ObterSaldo()
-        {
-            var cpf = User.FindFirst("cpf")?.Value;
-            if (string.IsNullOrEmpty(cpf))
-                return Unauthorized(new { mensagem = "Token sem claim 'cpf'" });
-
-            var resultado = await mediator.Send(new ObterSaldoQuery(cpf));
-            return Ok(resultado);
-        }
+            => Ok(await mediator.Send(new ObterSaldoQuery(CpfDoToken())));
 
         /// <summary>Extrato do usuário autenticado (CPF vem do JWT).</summary>
         [HttpGet("extrato")]
         public async Task<IActionResult> ObterExtrato()
-        {
-            var cpf = User.FindFirst("cpf")?.Value;
-            if (string.IsNullOrEmpty(cpf))
-                return Unauthorized(new { mensagem = "Token sem claim 'cpf'" });
-
-            var resultado = await mediator.Send(new ObterExtratoQuery(cpf));
-            return Ok(resultado ?? new ObterExtratoResponse());
-        }
+            => Ok(await mediator.Send(new ObterExtratoQuery(CpfDoToken())) ?? new ObterExtratoResponse());
 
         /// <summary>
         /// Movimentação direta (depósito/saque) — não confundir com Transferência.
@@ -78,24 +46,20 @@ namespace BankMore.ContaCorrente.Api.Controllers
         [HttpPost("movimentar")]
         public async Task<IActionResult> Movimentar([FromBody] MovimentarRequest request)
         {
-            var cpf = User.FindFirst("cpf")?.Value;
-            if (string.IsNullOrEmpty(cpf))
-                return Unauthorized(new { mensagem = "Token sem claim 'cpf'" });
+            await mediator.Send(new EfetuarMovimentacaoCommand(
+                request.RequestId ?? Guid.NewGuid().ToString(),
+                CpfDoToken(),
+                request.Valor,
+                request.Tipo));
+            return NoContent();
+        }
 
-            try
-            {
-                await mediator.Send(new EfetuarMovimentacaoCommand(
-                    request.RequestId ?? Guid.NewGuid().ToString(),
-                    cpf,
-                    request.Valor,
-                    request.Tipo
-                ));
-                return NoContent();
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { mensagem = ex.Message });
-            }
+        private string CpfDoToken()
+        {
+            var cpf = User.FindFirst("cpf")?.Value;
+            return string.IsNullOrEmpty(cpf)
+                ? throw new UnauthorizedAccessException("Token sem claim 'cpf'")
+                : cpf;
         }
     }
 

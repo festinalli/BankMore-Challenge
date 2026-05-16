@@ -1,3 +1,4 @@
+using BankMore.Transferencia.Api.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -97,6 +98,7 @@ var app = builder.Build();
 var kafkaBus = app.Services.CreateKafkaBus();
 await kafkaBus.StartAsync();
 
+app.UseMiddleware<ExceptionMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "BankMore Transferência API v1"));
 app.UseCors("DefaultPolicy");
