@@ -406,7 +406,10 @@ def main() -> int:
     config.set_string("state.backend.type", "rocksdb")
 
     env = StreamExecutionEnvironment.get_execution_environment(config)
-    env.set_parallelism(1)  # Sprint 2 single-slot; aumenta no Sprint 4
+    # Sprint 4.C: 3 slots (= partitions do source). Mais que isso desperdiça
+    # (Kafka assigna 1 partition por consumer); menos serializa o ML call.
+    # Override via env PARALLELISM se quiser benchmark com outro valor.
+    env.set_parallelism(int(os.getenv("PARALLELISM", "3")))
 
     build_pipeline(env)
 
