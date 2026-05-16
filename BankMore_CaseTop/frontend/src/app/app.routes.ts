@@ -3,6 +3,7 @@ import { LoginComponent } from './features/login/login.component';
 import { DashboardComponent } from './features/dashboard/dashboard.component';
 import { TransferenciaComponent } from './features/transferencia/transferencia.component';
 import { ExtratoComponent } from './features/extrato/extrato.component';
+import { FraudeOpsComponent } from './features/ops/fraude.component';
 import { AuthGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
@@ -29,6 +30,10 @@ export const routes: Routes = [
     path: 'extrato',
     component: ExtratoComponent,
     canActivate: [AuthGuard]
+  },
+  {
+    path: 'ops/fraude',
+    component: FraudeOpsComponent
   },
   {
     path: '**',
