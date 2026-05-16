@@ -200,11 +200,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "5000:8080"
     environment:
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-bankmore_db};Username=${POSTGRES_USER:-bankmore};Password=${POSTGRES_PASSWORD:-bankmore123};Maximum Pool Size=20
       JWT_KEY: ${JWT_KEY:?env JWT_KEY é obrigatória}
+      Kafka__Broker: kafka:29092
     networks: [bankmore]
 
   transferencia-api:

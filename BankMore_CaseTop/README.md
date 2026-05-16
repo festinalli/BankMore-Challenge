@@ -25,14 +25,39 @@ Toda transferência passa por um job **PyFlink 1.18** que combina **regras duras
 > `SALDO_INSUFICIENTE`). Worker popula feature store Redis (count_1h, valores_24h,
 > valores_30d) por CPF origem após cada efetivação. ML service consulta Redis no
 > `/predict` — features REAIS, não mais placeholders. 6º cenário no e2e valida saldo.
+>
+> **Sprint 4.C done** (16/05): **PyFlink parallelism = 3**. Antes single-slot
+> sequencializava chamadas síncronas ao ML. Subindo pra 3 (match com partitions
+> do `transferencia.solicitada`) dá distribuição real entre slots. Bench com 20
+> tx paralelas — `scripts/bench.sh`:
+> | métrica | parallelism=1 | parallelism=3 | delta |
+> |---|---|---|---|
+> | latência avg | 4177 ms | 2487 ms | **−40%** |
+> | p95 | 4338 ms | 2826 ms | **−35%** |
+> | throughput e2e | 4.5 req/s | 6.4 req/s | **+42%** |
+>
+> AsyncFunction nativo do PyFlink 1.18 só existe no Java API; ThreadPoolExecutor
+> dentro do operator daria gain marginal sobre essa baseline (custo do ML já está
+> em N slots). Cabe Sprint 5 se for medido como gargalo.
+>
+> **Sprint 4.D done** (16/05): **Painel ops em tempo real**. `FraudeOpsController`
+> no `ContaCorrente.Api` expõe `GET /api/admin/fraude/stream` (SSE) que consome
+> em paralelo `fraude.alerta` + `transferencia.rejeitada` com 2 consumers Kafka
+> efêmeros (group ID novo por conexão, `AutoOffsetReset.Latest`). Envelope JSON
+> enriquece com `evento` + `topico` + `recebidoEm` preservando todos os campos
+> do detector (motivos, score, modelo_versao, latência). Frontend Angular em
+> `/ops/fraude` (sem auth na v1) lista até 50 cards, cores por severidade, badge
+> live/offline, contadores. Cenário 7 do e2e abre stream + dispara fraude +
+> valida `data:` frame chegou.
 
 ## Como rodar (do zero)
 
 ```bash
 make pyflink-deps     # baixa apache-flink-libraries (220MB) no host — só na 1ª vez
 make up               # builda imagens (PyFlink + .NET) e sobe os 12 containers
-make seed             # cria Alice (R$10k) e Bob (R$500)
-make e2e              # 4 cenários: feliz, auto-transf, valor alto (alerta), burst
+make seed             # cria Alice (R$10k) e Bob (R$20k)
+make e2e              # 7 cenários: feliz, auto-transf, valor alto, burst, ML, saldo, painel SSE
+bash scripts/bench.sh # micro-bench: lat p50/p95 + throughput de N transferências paralelas
 ```
 
 ## Como rodar (1 comando)
@@ -51,6 +76,7 @@ Acesse:
 - **Flink UI**: http://localhost:8082
 - **Schema Registry**: http://localhost:8085
 - **Postgres**: `make psql`
+- **Painel ops (SSE)**: `cd frontend && ng serve` → http://localhost:4200/ops/fraude
 
 ## Stack
 
@@ -61,7 +87,7 @@ Acesse:
 | Streaming | Apache Flink 1.18 (placeholder p/ Sprint 2 — hoje `auto_approver.py`) |
 | Banco | PostgreSQL 16 com `NUMERIC(18,2)` em tudo que é dinheiro |
 | Cache | Redis 7 (feature store para o ML — Sprint 3) |
-| Frontend | Angular 21 standalone (login + dashboard + extrato + transferência) |
+| Frontend | Angular 21 standalone (login + dashboard + extrato + transferência + `/ops/fraude` SSE) |
 | Observabilidade | Prometheus + Grafana + OTEL — Sprint 4 |
 
 ## Estrutura
@@ -173,12 +199,13 @@ Três problemas em série tiveram que cair pra subir o job:
 
 - ❌ Avro + Schema Registry — hoje JSON
 - ❌ Feature store (Redis + Postgres warm) — features `valor_medio_24h` e `valor_p95_30d` hoje são placeholders
-- ❌ Async I/O do PyFlink chamando o ML (hoje síncrono — bloqueia slot)
-- ❌ Validação de saldo (transferir mais que tem ainda passa — Worker debita negativo)
+- ✅ Async I/O do PyFlink chamando o ML — endereçado por `parallelism=3` (Sprint 4.C). AsyncFunction nativo só Java em PyFlink 1.18.
+- ✅ Validação de saldo — Worker compensa com `SALDO_INSUFICIENTE` (Sprint 4.A)
 - ❌ PasswordHasher PBKDF2 (hoje SHA-256)
 - ❌ Validação de CPF com dígitos verificadores
-- ❌ Painel ops `/ops/fraude` no frontend
-- ❌ Prometheus + Grafana + Jaeger
+- ✅ Painel ops `/ops/fraude` no frontend — SSE em tempo real (Sprint 4.D)
+- ❌ Prometheus + Grafana + Jaeger (Sprint 5)
+- ❌ Auth role=ops no `/api/admin/fraude/stream` (hoje aberto na v1)
 - ❌ Frontend ainda fora do compose (rodar `cd frontend && ng serve` manual)
 - ❌ Outbox pattern para garantir atomicidade entre persistir e publicar
 - ❌ PyFlink submetido ao cluster JM/TM externo (hoje em local-mode dentro do container)

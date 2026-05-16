@@ -161,5 +161,26 @@ else
     fail "esperava COMPENSADA ou REJEITADA, veio status=$STATUS motivo=$MOTIVO"
 fi
 
+# ----------------------------------------------------------------------
+# Cenário 7 — painel ops SSE (Sprint 4.D)
+# Abre conexão SSE em background, dispara uma rejeição ML, valida que pelo
+# menos 1 frame "data:" chegou no stream. Tolerante: 25s de janela.
+# ----------------------------------------------------------------------
+echo
+echo "▶ Cenário 7: painel ops SSE (Sprint 4.D) — esperado >=1 evento no stream"
+SSE_OUT=$(mktemp)
+( curl -sN --max-time 20 "$API_CONTA/api/admin/fraude/stream" > "$SSE_OUT" 2>/dev/null ) &
+SSE_PID=$!
+sleep 3
+curl -fsS -X POST $API_TRANSF/api/transferencia/efetuar \
+  -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" \
+  -d '{"cpfDestino":"22222222222","valor":29999,"tipo":"TED"}' > /dev/null
+wait $SSE_PID 2>/dev/null || true
+
+SSE_EVENTS=$(grep -c '^data: ' "$SSE_OUT" || true)
+rm -f "$SSE_OUT"
+test "$SSE_EVENTS" -ge 1 || fail "stream SSE não entregou eventos (recebido=$SSE_EVENTS)"
+ok "stream SSE entregou $SSE_EVENTS evento(s)"
+
 echo
 echo "✅ todos os cenários e2e passaram"
