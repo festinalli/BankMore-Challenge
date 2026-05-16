@@ -1,0 +1,37 @@
+# BankMore fraud-detector — imagem PyFlink 1.18 com Kafka connector
+# Roda em local-mode dentro do container (Sprint 2).
+# Sprint 4: trocar pra submissão no JM/TM externo.
+
+FROM flink:1.18-scala_2.12-java11
+
+# --- Python 3.10 (default no Debian bookworm slim base do Flink) ---
+USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-dev \
+        build-essential curl ca-certificates && \
+    ln -sf /usr/bin/python3 /usr/bin/python && \
+    rm -rf /var/lib/apt/lists/*
+
+# --- PyFlink (Python API) ---
+# apache-flink já traz o tar do Flink — usamos só a API Python e os JARs locais
+RUN pip3 install --no-cache-dir \
+        --default-timeout=1800 \
+        --retries=10 \
+        --prefer-binary \
+        "apache-flink==1.18.1"
+
+# --- Kafka connector JAR ---
+# Necessário no /opt/flink/lib pro PyFlink achar
+ARG KAFKA_CONNECTOR_VERSION=3.0.2-1.18
+RUN curl -fsSL \
+        "https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/${KAFKA_CONNECTOR_VERSION}/flink-sql-connector-kafka-${KAFKA_CONNECTOR_VERSION}.jar" \
+        -o /opt/flink/lib/flink-sql-connector-kafka.jar
+
+WORKDIR /opt/job
+COPY fraud_detector_job.py /opt/job/
+
+ENV PYFLINK_CLIENT_EXECUTABLE=/usr/bin/python3
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["python3", "-u", "/opt/job/fraud_detector_job.py"]

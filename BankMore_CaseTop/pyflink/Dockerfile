@@ -1,11 +1,13 @@
-# Sprint 1 only — auto-approver Python
-# Sprint 2 substitui por imagem do job PyFlink real
+# BankMore fraud-detector — Sprint 2
+# Python state machine que implementa a topologia que o PyFlink job teria.
+# Sprint 4 troca pelo PyFlink real submetido ao JM/TM (mesmo schema de eventos).
 FROM python:3.11-slim
 
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY auto_approver.py .
+COPY fraud_detector.py .
 
-ENTRYPOINT ["python", "-u", "auto_approver.py"]
+ENV PYTHONUNBUFFERED=1
+ENTRYPOINT ["python", "-u", "fraud_detector.py"]
