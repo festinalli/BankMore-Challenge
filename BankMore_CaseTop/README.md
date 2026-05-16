@@ -1,11 +1,17 @@
 # BankMore — Real-Time Fraud Detection
 
-Sistema bancário event-driven com detecção de fraude em tempo real via PyFlink.
-Toda transferência passa por um pipeline de scoring antes de ser efetivada — decisão sub-segundo, modelo de ML treinado, observabilidade ponta-a-ponta.
+Sistema bancário event-driven com detecção de fraude em tempo real.
+Toda transferência passa por um detector com state por CPF, regras determinísticas e
+3 destinos (aprovada / rejeitada / alerta) **antes** de ser efetivada.
 
-> **Sprint 1 — done & validado end-to-end (11/05/2026):** stack 100% Docker, fluxo
-> `Frontend → Transferência → Kafka → Auto-approver → Worker → Postgres` funcionando.
-> `make e2e` valida automaticamente. PyFlink real entra no Sprint 2.
+> **Sprint 1 done** (11/05/2026): stack 100% Docker, fluxo Solicitada → Worker.
+>
+> **Sprint 2 done** (16/05/2026): detector com state, persistência de `SOLICITADA → EFETIVADA/REJEITADA`,
+> consumer de rejeições, 4 cenários e2e validados (feliz / auto-transf / valor alto / burst).
+> Detector hoje em Python puro (mesma topologia que o job PyFlink seria — wheel apache-flink
+> dando timeout no PyPI; swap para PyFlink real fica reservado pra Sprint 4 sem mudar contrato).
+>
+> ML real e schemas Avro: Sprint 3.
 
 ## Como rodar (1 comando)
 
@@ -61,25 +67,39 @@ docs/                Storyline de entrevista
     │ valida claim cpf, gera id+correlationId
     │ produz JSON em transferencia.solicitada
     ▼
-[Kafka :9092]
+[Kafka :9092] (transferencia.solicitada)
     │
     ▼
-[auto_approver.py]  ← Sprint 1: copia direto. Sprint 2: PyFlink decide.
-    │ produz em transferencia.aprovada
-    ▼
-[Kafka :9092]
+[fraud-detector] (Python, state por CPF, regras determinísticas)
+    │   R1: cpfOrigem == cpfDestino     → REJEITADA (defesa secundária)
+    │   R2: valor <= 0                  → REJEITADA
+    │   R3: ≥4 tx/60s mesmo CPF         → REJEITADA (motivo=BURST_*)
+    │   R4: valor >= R$ 10.000          → APROVADA + cópia em fraude.alerta
+    │   R5: default                     → APROVADA
     │
-    ▼
-[Tarifas.Worker]
-    │ transação Postgres ATÔMICA:
-    │   • idempotência por id da transferência
-    │   • movimento D categoria=TRANSFERENCIA (origem, valor)
-    │   • movimento D categoria=TARIFA       (origem, taxa)  ← saldo reflete taxa!
-    │   • movimento C categoria=TRANSFERENCIA (destino, valor)
-    │   • linha em tarifa (auditoria)
-    ▼
-[Postgres :5432]  → view saldo_conta retorna SUM(C - D) por conta
+    ├──▶ transferencia.aprovada   ─────► Tarifas.Worker (consumer-aprovadas) ───┐
+    ├──▶ transferencia.rejeitada  ─────► Tarifas.Worker (consumer-rejeitadas)  │
+    └──▶ fraude.alerta            ─────► (ops dashboard, Sprint 4)             │
+                                                                                │
+                                                                                ▼
+                                                                       [Tarifas.Worker]
+                                                                       Aprovadas:
+                                                                         • Tx Postgres ATÔMICA
+                                                                         • idempotência por id
+                                                                         • mov D origem (valor)
+                                                                         • mov D origem (tarifa)
+                                                                         • mov C destino (valor)
+                                                                         • linha em tarifa (audit)
+                                                                         • UPDATE transferencia
+                                                                           status='EFETIVADA'
+                                                                       Rejeitadas:
+                                                                         • UPDATE transferencia
+                                                                           status='REJEITADA',
+                                                                           motivo, modelo_versao
 ```
+
+A `transferencia` no Postgres é a fonte de verdade do status:
+`SOLICITADA → APROVADA/REJEITADA (decididaEm) → EFETIVADA (efetivadaEm)`.
 
 ## O que melhorou vs. versões anteriores
 
@@ -106,18 +126,31 @@ docs/                Storyline de entrevista
 | 19 | `ObterExtratoHandlerTests` quebrado | ✅ 9/9 testes verdes |
 | 20 | enum `TipoTransferencia` aceitava só int | ✅ `JsonStringEnumConverter` (PIX/TED/TEF) |
 
-## O que ainda não está pronto (Sprints 2+)
+## Sprint 2 (done)
 
-- ❌ PyFlink real com event-time, watermark, state, Async I/O para ML
-- ❌ Avro + Schema Registry — Sprint 1 usa JSON
-- ❌ Modelo de ML treinado
-- ❌ Persistência da `transferencia.status` (API ainda não escreve no Postgres)
-- ❌ Validação de saldo (transferir mais que tem ainda passa)
+- ✅ Detector com state (rolling window 60s por CPF) — `pyflink/fraud_detector.py`
+- ✅ Persistência da `transferencia.status` no Postgres (SOLICITADA → EFETIVADA/REJEITADA)
+- ✅ `RejeicaoConsumer` no Worker fecha o ciclo de status
+- ✅ 4 cenários no `make e2e`: feliz, auto-transf, valor alto (ALERTA), burst (BURST_*)
+
+**Pivot de Sprint 2 (assumido):** o wheel `apache-flink` (~350MB) deu read-timeout
+consistentemente no PyPI. Implementei o detector em Python puro com a **mesma topologia
+e contrato** que o job PyFlink teria. O swap futuro é local — não muda eventos nem
+consumers. Estrutura PyFlink (`fraud_detector_job.py`, `Dockerfile.flink`) versionada
+para uso no Sprint 4.
+
+## O que ainda não está pronto (Sprints 3+)
+
+- ❌ PyFlink real (job em RocksDB + checkpoint exactly-once + Async I/O para ML)
+- ❌ Avro + Schema Registry — Sprint 2 ainda usa JSON
+- ❌ Modelo de ML treinado (`ml/train.ipynb`)
+- ❌ Validação de saldo (transferir mais que tem ainda passa — Worker debita negativo)
 - ❌ PasswordHasher PBKDF2 (hoje SHA-256)
 - ❌ Validação de CPF com dígitos verificadores
 - ❌ Painel ops `/ops/fraude` no frontend
 - ❌ Prometheus + Grafana + Jaeger
-- ❌ Frontend ainda não está no compose (rodar `cd frontend && ng serve` manual)
+- ❌ Frontend ainda fora do compose (rodar `cd frontend && ng serve` manual)
+- ❌ Outbox pattern para garantir atomicidade entre persistir e publicar
 
 Mapeado em [`CASE_TOP_PLAN.md`](CASE_TOP_PLAN.md).
 

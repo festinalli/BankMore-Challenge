@@ -59,23 +59,21 @@ topics:
 	docker exec bankmore-kafka kafka-topics --bootstrap-server localhost:9092 --list
 
 # ---------------------------------------------------------------------
-# Seed: Alice (cpf=11111111111, R$ 10.000) e Bob (cpf=22222222222, R$ 500)
-# Senha: "senha123"
+# Seed idempotente: Alice (R$ 10k) e Bob (R$ 500). 409 = já existe (OK).
 # ---------------------------------------------------------------------
 seed:
-	@curl -fsS -X POST http://localhost:5000/api/contacorrente/criar \
+	@curl -s -o /dev/null -w "Alice: HTTP %{http_code}\n" -X POST http://localhost:5000/api/contacorrente/criar \
 	  -H "Content-Type: application/json" \
-	  -d '{"nome":"Alice","cpf":"11111111111","senha":"senha123","saldoInicial":10000.00}' \
-	  && echo " -> Alice criada"
-	@curl -fsS -X POST http://localhost:5000/api/contacorrente/criar \
+	  -d '{"nome":"Alice","cpf":"11111111111","senha":"senha123","saldoInicial":10000.00}'
+	@curl -s -o /dev/null -w "Bob:   HTTP %{http_code}\n" -X POST http://localhost:5000/api/contacorrente/criar \
 	  -H "Content-Type: application/json" \
-	  -d '{"nome":"Bob","cpf":"22222222222","senha":"senha123","saldoInicial":500.00}' \
-	  && echo " -> Bob criado"
+	  -d '{"nome":"Bob","cpf":"22222222222","senha":"senha123","saldoInicial":500.00}'
 
 # ---------------------------------------------------------------------
-# e2e: cria contas, transfere R$ 200 TED Alice → Bob, valida saldos
+# e2e: assume seed já rodou (banco com Alice e Bob) — não recria contas.
+# Para resetar tudo: make reset && make up && make seed && make e2e
 # ---------------------------------------------------------------------
-e2e: seed
+e2e:
 	@bash scripts/e2e.sh
 
 # ---------------------------------------------------------------------

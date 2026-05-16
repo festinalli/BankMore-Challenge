@@ -213,6 +213,8 @@ services:
       dockerfile: src/BankMore.Transferencia.Api/Dockerfile
     container_name: bankmore-transferencia-api
     depends_on:
+      postgres:
+        condition: service_healthy
       kafka:
         condition: service_healthy
       kafka-init:
@@ -220,6 +222,7 @@ services:
     ports:
       - "5001:8080"
     environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-bankmore_db};Username=${POSTGRES_USER:-bankmore};Password=${POSTGRES_PASSWORD:-bankmore123};Maximum Pool Size=10
       Kafka__Broker: kafka:29092
       JWT_KEY: ${JWT_KEY:?env JWT_KEY é obrigatória}
     networks: [bankmore]
@@ -241,12 +244,14 @@ services:
       Kafka__Broker: kafka:29092
     networks: [bankmore]
 
-  # Sprint 1 only — substituído pelo job PyFlink no Sprint 2
-  auto-approver:
+  # Sprint 2: detector com state por CPF + 3 producers (aprovada/rejeitada/alerta).
+  # Implementação Python da MESMA topologia que o job PyFlink seria.
+  # Sprint 4 substitui pela imagem PyFlink real (Dockerfile.flink) submetida ao JM/TM.
+  fraud-detector:
     build:
       context: ../../pyflink
       dockerfile: Dockerfile
-    container_name: bankmore-auto-approver
+    container_name: bankmore-fraud-detector
     depends_on:
       kafka:
         condition: service_healthy
@@ -255,8 +260,16 @@ services:
     environment:
       KAFKA_BROKERS: kafka:29092
       SOURCE_TOPIC: transferencia.solicitada
-      SINK_TOPIC: transferencia.aprovada
-      GROUP_ID: auto-approver
+      SINK_APROVADA: transferencia.aprovada
+      SINK_REJEITADA: transferencia.rejeitada
+      SINK_ALERTA: fraude.alerta
+      GROUP_ID: fraud-detector
+      VALOR_ALTO_BRL: "10000.00"
+      BURST_LIMITE_POR_MINUTO: "4"
+      JANELA_BURST_SEGUNDOS: "60"
+      WATERMARK_DELAY_SECONDS: "5"
+      CHECKPOINT_INTERVAL_MS: "60000"
+    restart: on-failure
     networks: [bankmore]
 
 volumes:
