@@ -82,6 +82,12 @@ builder.Services.AddKafka(kafka => kafka
 
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(EfetuarTransferenciaHandler).Assembly));
 
+// --- 5b. Repositório (Transferencia.Infrastructure) ---
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection ausente");
+builder.Services.AddSingleton<BankMore.Transferencia.Domain.ITransferenciaRepository>(
+    _ => new BankMore.Transferencia.Infrastructure.TransferenciaRepository(connectionString));
+
 builder.Services.AddCors(options =>
     options.AddPolicy("DefaultPolicy", p =>
         p.WithOrigins("http://localhost:4200").AllowAnyMethod().AllowAnyHeader()));
