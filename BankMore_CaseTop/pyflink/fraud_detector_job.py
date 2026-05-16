@@ -37,6 +37,8 @@ import json
 import logging
 import os
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 
 from pyflink.common import Configuration, Duration, Time, Types, WatermarkStrategy
@@ -71,6 +73,11 @@ BURST_LIMITE_POR_MINUTO = int  (os.getenv("BURST_LIMITE_POR_MINUTO", "4"))
 JANELA_BURST_SEGUNDOS   = int  (os.getenv("JANELA_BURST_SEGUNDOS",   "60"))
 WATERMARK_DELAY_SECONDS = int  (os.getenv("WATERMARK_DELAY_SECONDS", "5"))
 CHECKPOINT_INTERVAL_MS  = int  (os.getenv("CHECKPOINT_INTERVAL_MS",  "60000"))
+
+# Sprint 3: ML scoring
+ML_SERVICE_URL          = os.getenv("ML_SERVICE_URL",         "http://fraud-ml:5003")
+ML_TIMEOUT_SECONDS      = float(os.getenv("ML_TIMEOUT_SECONDS",      "2"))
+ML_REJEITAR_THRESHOLD   = float(os.getenv("ML_REJEITAR_THRESHOLD",   "0.7"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -154,11 +161,22 @@ class FraudDecider(KeyedProcessFunction):
 
     def process_element(self, value: str, ctx: "KeyedProcessFunction.Context"):
         """
-        Emite cada evento decididoEm como JSON único; o roteamento para os 3 tópicos
-        (aprovada/rejeitada/alerta) é feito downstream via .filter() + .sink_to().
-        PyFlink 1.18 Python tem bugs em side outputs com KeyedProcessFunction; filtros são
-        equivalentes funcionalmente e mais portáteis. Não há custo de re-particionamento
-        porque os filtros consomem do mesmo operator-chain.
+        Decisão híbrida (Sprint 3):
+            1. Regras DURAS (auto-transf, valor inválido, burst) → rejeição imediata,
+               sem custo de ML.
+            2. Se passou, computa features locais + chama ML /predict.
+            3. score >= ML_REJEITAR_THRESHOLD → REJEITADA com motivo ML_SCORE_HIGH
+            4. Senão → APROVADA. ALERTA é cópia adicional pra valor alto.
+
+        Por que essa ordem: regras duras são determinísticas, baratas e seguem
+        compliance (autotransf é fraude por definição). ML lida com sutilezas
+        (padrão de fracionamento, horário suspeito + valor médio). Falha do ML
+        é "fail-open" → segue só com regras, pra não derrubar transferências
+        legítimas se o serviço cair.
+
+        Emite cada evento decidido como JSON único; o roteamento para os 3 tópicos
+        é feito downstream via .filter() + .sink_to() (workaround do bug de
+        side-outputs em PyFlink 1.18 com KeyedProcessFunction).
         """
         try:
             raw = json.loads(value)
@@ -174,28 +192,93 @@ class FraudDecider(KeyedProcessFunction):
         tipo        = payload.get("tipo") or "PIX"
 
         decisao, motivos = self._decidir(cpf_origem, cpf_destino, valor, event_ts)
-        decided_at = int(datetime.now(timezone.utc).timestamp() * 1000)
+        modelo_versao = "rules-v1"
+        score_ml: float | None = None
 
+        # Se as regras DURAS aprovaram, consulta o ML pra refinar
+        if decisao == "APROVADA":
+            score_ml, modelo_ml = self._consultar_ml(payload, event_ts)
+            if score_ml is not None:
+                modelo_versao = f"rules-v1+{modelo_ml}"
+                if score_ml >= ML_REJEITAR_THRESHOLD:
+                    decisao = "REJEITADA"
+                    motivos.append(f"ML_SCORE_{score_ml:.3f}")
+
+        decided_at = int(datetime.now(timezone.utc).timestamp() * 1000)
         out = {
             **payload,
             "decisao": decisao,
             "motivos": motivos,
             "decididoEm": decided_at,
             "latenciaMs": max(decided_at - event_ts, 0),
-            "modeloVersao": "rules-v1",
+            "modeloVersao": modelo_versao,
         }
+        if score_ml is not None:
+            out["scoreFraude"] = round(score_ml, 4)
 
         if decisao == "APROVADA":
-            log.info("APROVADA id=%s cpf=%s*** valor=%.2f tipo=%s",
-                     payload.get("id"), cpf_origem[:3], valor, tipo)
+            log.info("APROVADA id=%s cpf=%s*** valor=%.2f tipo=%s score=%s",
+                     payload.get("id"), cpf_origem[:3], valor, tipo,
+                     f"{score_ml:.3f}" if score_ml is not None else "n/a")
             if valor >= VALOR_ALTO_BRL:
                 log.warning("ALERTA id=%s cpf=%s*** valor=%.2f (>= R$ %.2f)",
                             payload.get("id"), cpf_origem[:3], valor, VALOR_ALTO_BRL)
-        elif decisao == "REJEITADA":
+        else:
             log.warning("REJEITADA id=%s cpf=%s*** valor=%.2f motivos=%s",
                         payload.get("id"), cpf_origem[:3], valor, motivos)
 
         yield json.dumps(out, ensure_ascii=False)
+
+    def _consultar_ml(self, payload: dict, event_ts: int) -> tuple[float | None, str]:
+        """
+        Chama o /predict do ml-service. Fail-open: se falhar, retorna (None, '').
+
+        Features computadas localmente (todas determinísticas — sem estado externo):
+            - valor, tipo, hora_do_dia, dow: do payload + timestamp
+            - count_tx_cpf_1h: do MapState do próprio operator (rolling 60s)
+              Aproximação: o state guarda 60s; multiplicamos por 60 pra estimar 1h.
+              Sprint 4: state separado pra 1h ou Redis.
+            - is_autotransferencia: já checado pelas regras duras (sempre 0 aqui)
+            - valor_medio_cpf_24h, valor_p95_cpf_30d: deixadas em valor default
+              (sem feature store ainda — Sprint 4)
+        """
+        dt = datetime.fromtimestamp(event_ts / 1000, tz=timezone.utc)
+
+        # Contagem do state — aprox. 1h via estimativa (state real é 60s)
+        try:
+            count_window = sum(1 for _ in self._burst.keys())
+        except Exception:
+            count_window = 0
+
+        features = {
+            "valor":                float(payload.get("valor") or 0),
+            "tipo":                 (payload.get("tipo") or "PIX").upper(),
+            "hora_do_dia":          dt.hour,
+            "dow":                  dt.weekday(),
+            "count_tx_cpf_1h":      count_window,
+            "valor_medio_cpf_24h":  float(payload.get("valor") or 0),  # placeholder
+            "is_autotransferencia": 0,  # regra dura já filtrou
+            "valor_p95_cpf_30d":    float(payload.get("valor") or 0) * 2.0,  # placeholder
+        }
+
+        body = json.dumps({"features": features}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{ML_SERVICE_URL}/predict",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=ML_TIMEOUT_SECONDS) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return float(data.get("score", 0.0)), data.get("modelo_versao", "ml-unknown")
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
+            log.warning("ML indisponível (fail-open): %s", e)
+            return None, ""
+        except Exception as e:
+            log.warning("erro inesperado no ML (fail-open): %s", e)
+            return None, ""
 
     def _decidir(self, cpf_origem: str, cpf_destino: str, valor: float, event_ts: int):
         motivos: list[str] = []

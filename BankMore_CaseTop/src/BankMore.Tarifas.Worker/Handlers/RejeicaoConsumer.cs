@@ -24,6 +24,7 @@ public class RejeicaoConsumer(IConfiguration configuration, ILogger<RejeicaoCons
                SET status='REJEITADA',
                    motivo=@motivo,
                    modelo_versao=@versao,
+                   score_fraude=@score,
                    decidida_em=@decididaEm
              WHERE id=@id AND status IN ('SOLICITADA')";
 
@@ -36,6 +37,7 @@ public class RejeicaoConsumer(IConfiguration configuration, ILogger<RejeicaoCons
             id = message.Id,
             motivo = motivos,
             versao = message.ModeloVersao ?? "rules-v1",
+            score = message.ScoreFraude,
             decididaEm = FromMillis(message.DecididoEm) ?? DateTime.UtcNow
         });
 
@@ -64,5 +66,6 @@ public class TransferenciaRejeitadaMessage
     public string Decisao { get; set; } = "REJEITADA";
     public string[]? Motivos { get; set; }
     public string? ModeloVersao { get; set; }
+    public decimal? ScoreFraude { get; set; }
     public long? DecididoEm { get; set; }
 }
