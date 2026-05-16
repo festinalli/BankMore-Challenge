@@ -256,12 +256,14 @@ class FraudDecider(KeyedProcessFunction):
             "hora_do_dia":          dt.hour,
             "dow":                  dt.weekday(),
             "count_tx_cpf_1h":      count_window,
-            "valor_medio_cpf_24h":  float(payload.get("valor") or 0),  # placeholder
             "is_autotransferencia": 0,  # regra dura já filtrou
-            "valor_p95_cpf_30d":    float(payload.get("valor") or 0) * 2.0,  # placeholder
+            # Sprint 4.B: NÃO enviamos placeholders pra `valor_medio_cpf_24h` nem
+            # `valor_p95_cpf_30d` — o /predict enriquece via Redis a partir do cpfOrigem.
+            # Se Redis estiver vazio (CPF novo) ou indisponível, /predict usa defaults.
         }
 
-        body = json.dumps({"features": features}).encode("utf-8")
+        cpf_origem = (payload.get("cpfOrigem") or "").strip()
+        body = json.dumps({"cpfOrigem": cpf_origem, "features": features}).encode("utf-8")
         req = urllib.request.Request(
             f"{ML_SERVICE_URL}/predict",
             data=body,

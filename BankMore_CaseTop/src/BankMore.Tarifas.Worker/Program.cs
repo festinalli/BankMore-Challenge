@@ -1,7 +1,10 @@
 using BankMore.Tarifas.Worker.Handlers;
+using BankMore.Tarifas.Worker.Services;
 using KafkaFlow;
 using KafkaFlow.Serializer;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using StackExchange.Redis;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -9,8 +12,17 @@ var kafkaBroker = builder.Configuration.GetValue<string>("Kafka:Broker")
     ?? Environment.GetEnvironmentVariable("KAFKA_BROKER")
     ?? "localhost:9092";
 
+var redisConn = builder.Configuration.GetValue<string>("Redis:Connection")
+    ?? Environment.GetEnvironmentVariable("REDIS_CONNECTION")
+    ?? "localhost:6379";
+
 // Postgres connection string fica em IConfiguration — TarifaConsumer puxa via IConfiguration.
 // Schema é gerenciado pelo init.sql do Postgres; Worker não cria tabela.
+
+// Sprint 4.B: feature store em Redis
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    _ => ConnectionMultiplexer.Connect(redisConn));
+builder.Services.AddSingleton<FeatureStore>();
 
 builder.Services.AddKafka(kafka => kafka
     .UseConsoleLog()
