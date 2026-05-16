@@ -51,6 +51,10 @@ Thumbs.db
 checkpoints/
 savepoints/
 
+# Wheels/tarballs gigantes baixados localmente (PyFlink libraries ~220MB)
+pyflink/wheels/*.tar.gz
+pyflink/wheels/*.whl
+
 # ML
 *.joblib
 *.pkl

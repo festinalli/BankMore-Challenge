@@ -44,8 +44,6 @@ from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.watermark_strategy import TimestampAssigner
 from pyflink.datastream import (
     CheckpointingMode,
-    OutputTag,
-    ProcessFunction,
     RuntimeContext,
     StreamExecutionEnvironment,
 )
@@ -73,11 +71,6 @@ BURST_LIMITE_POR_MINUTO = int  (os.getenv("BURST_LIMITE_POR_MINUTO", "4"))
 JANELA_BURST_SEGUNDOS   = int  (os.getenv("JANELA_BURST_SEGUNDOS",   "60"))
 WATERMARK_DELAY_SECONDS = int  (os.getenv("WATERMARK_DELAY_SECONDS", "5"))
 CHECKPOINT_INTERVAL_MS  = int  (os.getenv("CHECKPOINT_INTERVAL_MS",  "60000"))
-
-# Side outputs (não viram tópicos diretamente — cada um vai pra um sink Kafka próprio)
-TAG_APROVADA  = OutputTag("aprovada",  Types.STRING())
-TAG_REJEITADA = OutputTag("rejeitada", Types.STRING())
-TAG_ALERTA    = OutputTag("alerta",    Types.STRING())
 
 logging.basicConfig(
     level=logging.INFO,
@@ -136,18 +129,49 @@ class FraudDecider(KeyedProcessFunction):
         descriptor.enable_time_to_live(ttl)
         self._burst = ctx.get_map_state(descriptor)
 
+    # Aliases pra tolerar PascalCase (.NET Newtonsoft) E camelCase (front)
+    _ALIASES = {
+        "id":            ("id", "Id"),
+        "correlationId": ("correlationId", "CorrelationId"),
+        "cpfOrigem":     ("cpfOrigem", "CpfOrigem"),
+        "cpfDestino":    ("cpfDestino", "CpfDestino"),
+        "valor":         ("valor", "Valor"),
+        "tipo":          ("tipo", "Tipo"),
+        "taxa":          ("taxa", "Taxa"),
+        "timestamp":     ("timestamp", "Timestamp", "timestampMs"),
+        "canal":         ("canal", "Canal"),
+    }
+
+    @classmethod
+    def _normalizar(cls, evt: dict) -> dict:
+        out: dict = {}
+        for canon, keys in cls._ALIASES.items():
+            for k in keys:
+                if k in evt and evt[k] is not None:
+                    out[canon] = evt[k]
+                    break
+        return out
+
     def process_element(self, value: str, ctx: "KeyedProcessFunction.Context"):
+        """
+        Emite cada evento decididoEm como JSON único; o roteamento para os 3 tópicos
+        (aprovada/rejeitada/alerta) é feito downstream via .filter() + .sink_to().
+        PyFlink 1.18 Python tem bugs em side outputs com KeyedProcessFunction; filtros são
+        equivalentes funcionalmente e mais portáteis. Não há custo de re-particionamento
+        porque os filtros consomem do mesmo operator-chain.
+        """
         try:
-            payload = json.loads(value)
+            raw = json.loads(value)
         except json.JSONDecodeError as e:
             log.error("JSON inválido descartado: %s | raw=%s", e, value[:200])
             return
 
+        payload = self._normalizar(raw)
         event_ts = ctx.timestamp() or int(datetime.now(timezone.utc).timestamp() * 1000)
-        cpf_origem  = payload.get("cpfOrigem")  or payload.get("CpfOrigem")  or ""
-        cpf_destino = payload.get("cpfDestino") or payload.get("CpfDestino") or ""
-        valor       = float(payload.get("valor") or payload.get("Valor") or 0)
-        tipo        = payload.get("tipo")       or payload.get("Tipo")     or "PIX"
+        cpf_origem  = (payload.get("cpfOrigem")  or "").strip()
+        cpf_destino = (payload.get("cpfDestino") or "").strip()
+        valor       = float(payload.get("valor") or 0)
+        tipo        = payload.get("tipo") or "PIX"
 
         decisao, motivos = self._decidir(cpf_origem, cpf_destino, valor, event_ts)
         decided_at = int(datetime.now(timezone.utc).timestamp() * 1000)
@@ -160,22 +184,18 @@ class FraudDecider(KeyedProcessFunction):
             "latenciaMs": max(decided_at - event_ts, 0),
             "modeloVersao": "rules-v1",
         }
-        out_json = json.dumps(out, ensure_ascii=False)
 
         if decisao == "APROVADA":
-            ctx.output(TAG_APROVADA, out_json)
             log.info("APROVADA id=%s cpf=%s*** valor=%.2f tipo=%s",
                      payload.get("id"), cpf_origem[:3], valor, tipo)
+            if valor >= VALOR_ALTO_BRL:
+                log.warning("ALERTA id=%s cpf=%s*** valor=%.2f (>= R$ %.2f)",
+                            payload.get("id"), cpf_origem[:3], valor, VALOR_ALTO_BRL)
         elif decisao == "REJEITADA":
-            ctx.output(TAG_REJEITADA, out_json)
             log.warning("REJEITADA id=%s cpf=%s*** valor=%.2f motivos=%s",
                         payload.get("id"), cpf_origem[:3], valor, motivos)
 
-        # ALERTA é sempre cópia (não bloqueia a aprovação) quando valor alto e aprovada
-        if decisao == "APROVADA" and valor >= VALOR_ALTO_BRL:
-            ctx.output(TAG_ALERTA, out_json)
-            log.warning("ALERTA id=%s cpf=%s*** valor=%.2f (>= R$ %.2f)",
-                        payload.get("id"), cpf_origem[:3], valor, VALOR_ALTO_BRL)
+        yield json.dumps(out, ensure_ascii=False)
 
     def _decidir(self, cpf_origem: str, cpf_destino: str, valor: float, event_ts: int):
         motivos: list[str] = []
@@ -236,18 +256,43 @@ def build_pipeline(env: StreamExecutionEnvironment) -> None:
 
     stream = env.from_source(source, watermark, "kafka-source")
 
-    # Key by cpfOrigem — onde o state vive
-    keyed = stream.key_by(
-        lambda v: (json.loads(v).get("cpfOrigem") or json.loads(v).get("CpfOrigem") or ""),
-        key_type=Types.STRING(),
-    )
+    # Key by cpfOrigem — onde o state vive.
+    # Robusto: tolera JSON malformado e os dois casings (PascalCase do Newtonsoft, camelCase do front).
+    def _extract_key(v: str) -> str:
+        try:
+            p = json.loads(v)
+            return (p.get("cpfOrigem") or p.get("CpfOrigem") or "").strip()
+        except Exception:
+            return ""
 
-    main = keyed.process(FraudDecider(), output_type=Types.STRING())
+    keyed = stream.key_by(_extract_key, key_type=Types.STRING())
 
-    # Side outputs viram sinks Kafka separados
-    _sink(main.get_side_output(TAG_APROVADA),  SINK_APROVADA,  "sink-aprovada")
-    _sink(main.get_side_output(TAG_REJEITADA), SINK_REJEITADA, "sink-rejeitada")
-    _sink(main.get_side_output(TAG_ALERTA),    SINK_ALERTA,    "sink-alerta")
+    # Stream principal: decididos (JSON com campo "decisao")
+    decididos = keyed.process(FraudDecider(), output_type=Types.STRING())
+
+    # Roteamento por filtro — funcionalmente equivalente a side outputs, sem o bug do PyFlink 1.18
+    def _has_decisao(d: str):
+        return lambda v: f'"decisao": "{d}"' in v or f'"decisao":"{d}"' in v
+
+    aprovadas  = decididos.filter(_has_decisao("APROVADA")).name("filter-aprovada").uid("filter-aprovada")
+    rejeitadas = decididos.filter(_has_decisao("REJEITADA")).name("filter-rejeitada").uid("filter-rejeitada")
+    alertas    = aprovadas.filter(_valor_alto_filter()).name("filter-alerta").uid("filter-alerta")
+
+    _sink(aprovadas,  SINK_APROVADA,  "sink-aprovada")
+    _sink(rejeitadas, SINK_REJEITADA, "sink-rejeitada")
+    _sink(alertas,    SINK_ALERTA,    "sink-alerta")
+
+
+def _valor_alto_filter():
+    """Retorna predicate que verifica se valor >= VALOR_ALTO_BRL no payload JSON."""
+    threshold = VALOR_ALTO_BRL
+    def predicate(v: str) -> bool:
+        try:
+            p = json.loads(v)
+            return float(p.get("valor") or p.get("Valor") or 0) >= threshold
+        except Exception:
+            return False
+    return predicate
 
 
 def _sink(stream, topic: str, name: str) -> None:

@@ -1,28 +1,56 @@
-# BankMore fraud-detector — imagem PyFlink 1.18 com Kafka connector
-# Roda em local-mode dentro do container (Sprint 2).
-# Sprint 4: trocar pra submissão no JM/TM externo.
+# BankMore fraud-detector — PyFlink 1.18 com Kafka connector
+#
+# Por que o Dockerfile faz COPY de um wheel local em vez de pip puro:
+#   apache-flink-libraries-1.18.1.tar.gz tem 220MB (sdist, único arquivo)
+#   e o daemon Docker daqui consistentemente timeoutava no PyPI durante o pull.
+#   Baixando uma vez no host (curl) com resume funciona; reaproveitamos o tarball
+#   via COPY. O arquivo está em pyflink/wheels/ (gitignored).
+#
+#   Pra renovar: cd pyflink/wheels && bash ../fetch_pyflink_libs.sh
+#
+# Sprint 4 — quando este Dockerfile entrar no docker-compose:
+#   trocar o serviço fraud-detector pra usar este (Dockerfile.flink),
+#   submeter o job ao flink-jobmanager via `flink run -py`,
+#   manter exatamente os mesmos tópicos e contrato de evento (camelCase).
 
 FROM flink:1.18-scala_2.12-java11
 
-# --- Python 3.10 (default no Debian bookworm slim base do Flink) ---
 USER root
+
+# Python 3 + JDK 11 headless + build tools.
+# JDK é OBRIGATÓRIO porque a dep pemja==0.3.0 do PyFlink não tem wheel pra arm64/manylinux
+# e precisa compilar contra o JDK (procura /opt/java/openjdk/include — só existe com -jdk).
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3 python3-pip python3-dev \
+        openjdk-11-jdk-headless \
         build-essential curl ca-certificates && \
     ln -sf /usr/bin/python3 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
-# --- PyFlink (Python API) ---
-# apache-flink já traz o tar do Flink — usamos só a API Python e os JARs locais
+# A imagem flink:1.18 define JAVA_HOME=/opt/java/openjdk apontando pro JRE.
+# pemja procura /opt/java/openjdk/include/jni.h — só existe num JDK.
+# Solução arch-independente: linkar os headers do JDK instalado para dentro do JRE.
+RUN JDK_INCLUDE=$(dirname $(find /usr/lib/jvm -name jni.h 2>/dev/null | head -1)) && \
+    test -n "$JDK_INCLUDE" && \
+    mkdir -p /opt/java/openjdk/include/linux && \
+    cp -r $JDK_INCLUDE/* /opt/java/openjdk/include/ && \
+    echo "✓ jni.h disponível em /opt/java/openjdk/include/"
+
+# Camada 1: install do apache-flink-libraries a partir do tarball local
+# (pula o PyPI inteiramente — zero risco de timeout)
+COPY wheels/apache-flink-libraries-1.18.1.tar.gz /tmp/
+RUN pip3 install --no-cache-dir /tmp/apache-flink-libraries-1.18.1.tar.gz && \
+    rm /tmp/apache-flink-libraries-1.18.1.tar.gz
+
+# Camada 2: apache-flink (peq, ~6MB) + suas outras deps via PyPI
 RUN pip3 install --no-cache-dir \
-        --default-timeout=1800 \
-        --retries=10 \
+        --default-timeout=600 \
+        --retries=5 \
         --prefer-binary \
         "apache-flink==1.18.1"
 
-# --- Kafka connector JAR ---
-# Necessário no /opt/flink/lib pro PyFlink achar
+# Kafka connector JAR — PyFlink precisa que esteja em /opt/flink/lib
 ARG KAFKA_CONNECTOR_VERSION=3.0.2-1.18
 RUN curl -fsSL \
         "https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/${KAFKA_CONNECTOR_VERSION}/flink-sql-connector-kafka-${KAFKA_CONNECTOR_VERSION}.jar" \
