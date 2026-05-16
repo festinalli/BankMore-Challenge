@@ -235,6 +235,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       kafka:
         condition: service_healthy
       kafka-init:
@@ -242,6 +244,7 @@ services:
     environment:
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-bankmore_db};Username=${POSTGRES_USER:-bankmore};Password=${POSTGRES_PASSWORD:-bankmore123};Maximum Pool Size=10
       Kafka__Broker: kafka:29092
+      Redis__Connection: redis:6379
     networks: [bankmore]
 
   # Sprint 3: ML scoring service (Flask + XGBoost embutido na imagem).

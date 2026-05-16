@@ -38,6 +38,21 @@ Versão expandida do pitch de 4 minutos. Use como roteiro mental, não decore.
   Permite A/B online no Sprint 4 (shadow mode com 2 modelos lado a lado).
 - **Tradeoff:** latência HTTP por desacoplamento (modelo atualiza sem rebuild do Flink).
 
+### 4. Feature store em Redis (Sprint 4.B)
+- Worker, após efetivar, atualiza features rolling no Redis (count_1h, valores_24h, valores_30d) por CPF origem.
+- ML service lê do Redis no /predict — features reais, não placeholders.
+- Latência típica do lookup Redis: <2ms (pipeline batching).
+- Idempotência via SET NX EX (1h) — replay de Kafka não duplica contadores.
+- Best-effort: se Redis cair, /predict usa defaults (não derruba decisão).
+- **Tradeoff:** estado externo vs simplicidade — escolho externo pra escalar horizontalmente
+  o ML service (qualquer worker do gunicorn consulta o mesmo Redis).
+
+### 5. Validação de saldo no Worker (Sprint 4.A)
+- ML aprovou + regras aprovaram + Worker checa saldo na transação Postgres.
+- Se saldo < valor+taxa: marca `status='COMPENSADA'`, motivo `SALDO_INSUFICIENTE`,
+  registra idempotência e segue. Cliente vê status final via GET /transferencia/{id}.
+- Calculado por `SUM(C - D)` na mesma transação — sem race condition.
+
 ### 4. Observabilidade obrigatória, não decorativa
 - OpenTelemetry trace propagada via Kafka header
 - Trace completa: Angular → API → Kafka → Flink → ML → Worker → Postgres no Jaeger

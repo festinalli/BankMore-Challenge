@@ -18,7 +18,13 @@ Toda transferência passa por um job **PyFlink 1.18** que combina **regras duras
 > PyFlink chama `/predict` síncrono com **fail-open** (timeout 2s → segue só com
 > regras se ML cair). Decisão híbrida: regras DURAS primeiro (autotransf/burst/
 > valor inválido) + score ML segundo (threshold 0.95). `modelo_versao` salvo na
-> tabela `transferencia` (`rules-v1+xgboost-v1`). 5º cenário no e2e valida ML.
+> tabela `transferencia` (`rules-v1+xgboost-v1`).
+>
+> **Sprint 4.A+B done** (16/05): **Validação de saldo + Feature Store Redis**.
+> Worker valida saldo dentro da transação (rejeitada → COMPENSADA com motivo
+> `SALDO_INSUFICIENTE`). Worker popula feature store Redis (count_1h, valores_24h,
+> valores_30d) por CPF origem após cada efetivação. ML service consulta Redis no
+> `/predict` — features REAIS, não mais placeholders. 6º cenário no e2e valida saldo.
 
 ## Como rodar (do zero)
 

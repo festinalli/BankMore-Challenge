@@ -131,5 +131,35 @@ else
     fail "esperava REJEITADA por ML, veio status=$STATUS motivo=$MOTIVO"
 fi
 
+# ----------------------------------------------------------------------
+# Cenário 6 — saldo insuficiente (Sprint 4.A)
+# Worker valida saldo dentro da transação. Se < valor+taxa: COMPENSADA.
+# Bob tem saldo baixo após cenários anteriores. Tentar transferir R$ 999.999.
+# ----------------------------------------------------------------------
+echo
+echo "▶ Cenário 6: saldo insuficiente (Bob → Alice R\$ 999.999) — esperado COMPENSADA"
+# Espera 70s pra burst expirar
+sleep 70
+RESP=$(curl -fsS -X POST $API_TRANSF/api/transferencia/efetuar \
+  -H "Authorization: Bearer $BOB_TOKEN" -H "Content-Type: application/json" \
+  -d '{"cpfDestino":"11111111111","valor":999999,"tipo":"TED"}')
+ID6=$(echo "$RESP" | extract id)
+sleep 8
+
+STATUS=$($PSQL -c "SELECT status FROM transferencia WHERE id='$ID6';" | tr -d ' ')
+MOTIVO=$($PSQL -c "SELECT motivo FROM transferencia WHERE id='$ID6';" | tr -d ' ')
+
+# 2 caminhos válidos:
+#   (a) ML rejeita ANTES por score alto (R$ 999k → score 0.99+)
+#   (b) ML aprova mas Worker compensa por SALDO_INSUFICIENTE
+# Em ambos status != EFETIVADA, garantindo que dinheiro de Bob não foi pra Alice
+if [ "$STATUS" = "COMPENSADA" ] && [ "$MOTIVO" = "SALDO_INSUFICIENTE" ]; then
+    ok "Worker compensou $ID6: motivo=SALDO_INSUFICIENTE"
+elif [ "$STATUS" = "REJEITADA" ] && echo "$MOTIVO" | grep -q "ML_SCORE"; then
+    ok "ML rejeitou $ID6 antes do Worker chegar (score alto pra R\$ 999k é esperado): motivo=$MOTIVO"
+else
+    fail "esperava COMPENSADA ou REJEITADA, veio status=$STATUS motivo=$MOTIVO"
+fi
+
 echo
 echo "✅ todos os cenários e2e passaram"

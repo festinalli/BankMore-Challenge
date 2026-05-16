@@ -63,7 +63,9 @@ topics:
 	docker exec bankmore-kafka kafka-topics --bootstrap-server localhost:9092 --list
 
 # ---------------------------------------------------------------------
-# Seed idempotente: Alice (R$ 10k) e Bob (R$ 500). 409 = já existe (OK).
+# Seed idempotente: Alice (R$ 10k) e Bob (R$ 20k). 409 = já existe (OK).
+# Bob tem saldo alto pra Sprint 4.A não quebrar o cenário 3 (transfere R$ 12k).
+# Cenário 6 (saldo insuficiente) usa R$ 999.999 — fica acima mesmo assim.
 # ---------------------------------------------------------------------
 seed:
 	@curl -s -o /dev/null -w "Alice: HTTP %{http_code}\n" -X POST http://localhost:5000/api/contacorrente/criar \
@@ -71,7 +73,7 @@ seed:
 	  -d '{"nome":"Alice","cpf":"11111111111","senha":"senha123","saldoInicial":10000.00}'
 	@curl -s -o /dev/null -w "Bob:   HTTP %{http_code}\n" -X POST http://localhost:5000/api/contacorrente/criar \
 	  -H "Content-Type: application/json" \
-	  -d '{"nome":"Bob","cpf":"22222222222","senha":"senha123","saldoInicial":500.00}'
+	  -d '{"nome":"Bob","cpf":"22222222222","senha":"senha123","saldoInicial":20000.00}'
 
 # ---------------------------------------------------------------------
 # e2e: assume seed já rodou (banco com Alice e Bob) — não recria contas.
