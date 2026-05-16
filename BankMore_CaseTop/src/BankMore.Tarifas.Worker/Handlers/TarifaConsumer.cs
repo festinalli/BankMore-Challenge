@@ -3,20 +3,26 @@ using Dapper;
 using Npgsql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using BankMore.Tarifas.Worker.Services;
 
 namespace BankMore.Tarifas.Worker.Handlers
 {
     /// <summary>
     /// Efetiva uma transferência APROVADA pelo PyFlink:
     ///   1. Idempotência por <c>id</c> da transferência (replay-safe).
-    ///   2. Movimento D na origem (valor da transferência).
-    ///   3. Movimento D na origem (categoria=TARIFA) se houver taxa — saldo passa a refletir tarifa.
-    ///   4. Movimento C no destino.
-    ///   5. Registro auxiliar em <c>tarifa</c> (auditoria).
-    ///   6. Atualiza <c>transferencia.status='EFETIVADA'</c>.
-    /// Tudo dentro de UMA transação Postgres.
+    ///   2. Validação de saldo (Sprint 4.A) — se insuficiente, marca COMPENSADA.
+    ///   3. Movimento D na origem (valor da transferência).
+    ///   4. Movimento D na origem (categoria=TARIFA) se houver taxa.
+    ///   5. Movimento C no destino.
+    ///   6. Registro auxiliar em <c>tarifa</c> (auditoria).
+    ///   7. Atualiza <c>transferencia.status='EFETIVADA'</c>.
+    ///   8. Sprint 4.B — atualiza feature store Redis (count_1h, valores_24h, valores_30d).
+    /// Tudo dentro de UMA transação Postgres + commit fire-and-forget no Redis.
     /// </summary>
-    public class TarifaConsumer(IConfiguration configuration, ILogger<TarifaConsumer> logger)
+    public class TarifaConsumer(
+        IConfiguration configuration,
+        ILogger<TarifaConsumer> logger,
+        FeatureStore featureStore)
         : IMessageHandler<TransferenciaAprovadaMessage>
     {
         public async Task Handle(IMessageContext context, TransferenciaAprovadaMessage message)
@@ -56,6 +62,41 @@ namespace BankMore.Tarifas.Worker.Handlers
                     logger.LogError("Conta(s) não encontrada(s): origem={Origem} destino={Destino}",
                         message.CpfOrigem, message.CpfDestino);
                     await tx.RollbackAsync();
+                    return;
+                }
+
+                // 2.5) Sprint 4.A — validação de saldo na origem (FOR UPDATE pra evitar
+                // race condition se duas transferências aprovadas chegarem simultaneamente
+                // do mesmo CPF — exemplo: uma do PyFlink e outra de outro produtor)
+                var totalDebito = message.Valor + message.Taxa;
+                var saldoOrigem = await connection.ExecuteScalarAsync<decimal>(@"
+                    SELECT COALESCE(SUM(CASE WHEN tipomovimento='C' THEN valor ELSE -valor END), 0)
+                    FROM movimento
+                    WHERE idcontacorrente = @id",
+                    new { id = contaOrigem.idcontacorrente }, tx);
+
+                if (saldoOrigem < totalDebito)
+                {
+                    // Saldo insuficiente: marca transferência como COMPENSADA, registra
+                    // idempotência (não reprocessar), e segue. O cliente já viu SOLICITADA
+                    // na API; precisa olhar /transferencia/{id} pra ver status final.
+                    await connection.ExecuteAsync(@"
+                        UPDATE transferencia
+                           SET status='COMPENSADA', motivo='SALDO_INSUFICIENTE',
+                               decidida_em=@data, efetivada_em=@data
+                         WHERE id=@id AND status IN ('SOLICITADA', 'APROVADA')",
+                        new { id = message.Id, data = DateTime.UtcNow }, tx);
+
+                    await connection.ExecuteAsync(@"
+                        INSERT INTO idempotencia (chave_idempotencia, requisicao, resultado, data_processamento)
+                        VALUES (@id, @req, 'COMPENSADA_SALDO', @data)",
+                        new { id = message.Id, req = message.CorrelationId, data = DateTime.UtcNow }, tx);
+
+                    await tx.CommitAsync();
+
+                    logger.LogWarning(
+                        "Compensada {Id}: SALDO_INSUFICIENTE saldo={Saldo:F2} debito={Debito:F2} cpf={Cpf}",
+                        message.Id, saldoOrigem, totalDebito, Mask(message.CpfOrigem));
                     return;
                 }
 
@@ -138,6 +179,11 @@ namespace BankMore.Tarifas.Worker.Handlers
                     "Efetivada {Id}: {Tipo} R$ {Valor} (taxa R$ {Taxa}) origem={CpfO} destino={CpfD}",
                     message.Id, message.Tipo, message.Valor, message.Taxa,
                     Mask(message.CpfOrigem), Mask(message.CpfDestino));
+
+                // Sprint 4.B — atualiza feature store APÓS commit no Postgres.
+                // Best-effort: erro aqui é loggado mas não rollback (transação já fechou).
+                await featureStore.RegistrarTransferenciaEfetivada(
+                    message.CpfOrigem, message.Valor, agora, message.Id);
             }
             catch (Exception ex)
             {
