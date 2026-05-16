@@ -106,5 +106,30 @@ BURST_COUNT=$($PSQL -c "SELECT COUNT(*) FROM transferencia WHERE motivo LIKE 'BU
 test "$BURST_COUNT" -ge 1 || fail "esperava ≥1 BURST, veio $BURST_COUNT"
 ok "rejeições BURST registradas: $BURST_COUNT"
 
+# ----------------------------------------------------------------------
+# Cenário 5 — ML detecta padrão suspeito (Sprint 3)
+# Regras duras aprovam (não é autotransf, não tem burst do Alice, valor > 0);
+# o XGBoost rejeita porque valor R$ 30k entra no padrão F1 do treino (>R$ 15k).
+# Calibração: R$ 30k → score ~0.99 > threshold 0.95 → REJEITADA com motivo ML_SCORE_*
+# ----------------------------------------------------------------------
+echo
+echo "▶ Cenário 5: ML detecta valor altíssimo (R\$ 30.000 de Alice) — esperado REJEITADA com motivo ML_SCORE_*"
+RESP=$(curl -fsS -X POST $API_TRANSF/api/transferencia/efetuar \
+  -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" \
+  -d '{"cpfDestino":"22222222222","valor":30000,"tipo":"TED"}')
+ID5=$(echo "$RESP" | extract id)
+sleep 8
+
+STATUS=$($PSQL -c "SELECT status FROM transferencia WHERE id='$ID5';" | tr -d ' ')
+MOTIVO=$($PSQL -c "SELECT motivo FROM transferencia WHERE id='$ID5';" | tr -d ' ')
+
+if [ "$STATUS" = "REJEITADA" ] && echo "$MOTIVO" | grep -q "ML_SCORE"; then
+    SCORE=$($PSQL -c "SELECT score_fraude FROM transferencia WHERE id='$ID5';" | tr -d ' ')
+    VERSAO=$($PSQL -c "SELECT modelo_versao FROM transferencia WHERE id='$ID5';" | tr -d ' ')
+    ok "ML rejeitou $ID5: motivo=$MOTIVO score=$SCORE versao=$VERSAO"
+else
+    fail "esperava REJEITADA por ML, veio status=$STATUS motivo=$MOTIVO"
+fi
+
 echo
 echo "✅ todos os cenários e2e passaram"

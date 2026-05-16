@@ -27,10 +27,16 @@ Versão expandida do pitch de 4 minutos. Use como roteiro mental, não decore.
 - **Tradeoff:** ops complexity (precisa savepoint para deploy) por correctness
 
 ### 3. ML híbrido — regras + modelo
-- Regras duras no Flink: saldo insuficiente, autotransferência, conta inativa
-- Modelo no Flask: features rolling, score [0,1]
-- Decisão: regras primeiro (rejeição imediata), modelo segundo (score combinado)
-- **Tradeoff:** latência da chamada HTTP por versionamento independente do modelo
+- Regras DURAS no Flink: autotransferência, valor inválido, burst (≥4 tx/60s).
+  Determinísticas, baratas, compliance.
+- Modelo XGBoost no Flask: 7 features, score [0,1], threshold 0.95 calibrado pra
+  recall ≥ 0.85 no eval. ROC-AUC 0.999 em dataset sintético (~100k amostras, 2% fraude).
+- Ordem: regras duras primeiro (fail fast), modelo só pra quem passa.
+- **Fail-open:** se /predict cair ou demorar > 2s, segue só com regras (não derruba
+  transferências legítimas se ML estiver indisponível).
+- **Versionamento:** todo evento decididoEm carrega `modeloVersao` (ex.: `rules-v1+xgboost-v1`).
+  Permite A/B online no Sprint 4 (shadow mode com 2 modelos lado a lado).
+- **Tradeoff:** latência HTTP por desacoplamento (modelo atualiza sem rebuild do Flink).
 
 ### 4. Observabilidade obrigatória, não decorativa
 - OpenTelemetry trace propagada via Kafka header

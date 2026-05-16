@@ -244,6 +244,19 @@ services:
       Kafka__Broker: kafka:29092
     networks: [bankmore]
 
+  # Sprint 3: ML scoring service (Flask + XGBoost embutido na imagem).
+  # Modelo treinado no build da imagem (determinístico, seed=42).
+  fraud-ml:
+    build:
+      context: ../../ml
+      dockerfile: Dockerfile
+    container_name: bankmore-fraud-ml
+    ports:
+      - "5003:5003"
+    environment:
+      ML_THRESHOLD: "0"      # 0 = usa threshold calibrado em train.py (recall >= 0.85)
+    networks: [bankmore]
+
   # Sprint 2.5: PyFlink real (event-time + watermark + RocksDB MapState com TTL + side outputs).
   # Mesma lógica que o detector Python validado anteriormente. Trocar de detector é só
   # mudar o build > dockerfile entre 'Dockerfile' (Python puro) e 'Dockerfile.flink' (PyFlink).
@@ -257,6 +270,8 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      fraud-ml:
+        condition: service_healthy
     environment:
       KAFKA_BROKERS: kafka:29092
       SOURCE_TOPIC: transferencia.solicitada
@@ -269,6 +284,13 @@ services:
       JANELA_BURST_SEGUNDOS: "60"
       WATERMARK_DELAY_SECONDS: "5"
       CHECKPOINT_INTERVAL_MS: "60000"
+      # Sprint 3: chama o ML service. Threshold calibrado em 0.95 (entre
+      # 0.7 agressivo e 0.991 do recall_85 do treino) — captura fraudes
+      # claras (R$ ≥ 30k → score 0.99) sem bloquear valor alto legítimo
+      # (R$ 10k → score 0.83 → APROVADA + ALERTA).
+      ML_SERVICE_URL: http://fraud-ml:5003
+      ML_TIMEOUT_SECONDS: "2"
+      ML_REJEITAR_THRESHOLD: "0.95"
     restart: on-failure
     networks: [bankmore]
 

@@ -1,20 +1,24 @@
 # BankMore — Real-Time Fraud Detection
 
 Sistema bancário event-driven com detecção de fraude em tempo real.
-Toda transferência passa por um job **PyFlink 1.18** com state por CPF, regras
-determinísticas e 3 destinos (aprovada / rejeitada / alerta) **antes** de ser efetivada.
+Toda transferência passa por um job **PyFlink 1.18** que combina **regras duras**
++ **modelo XGBoost** servido em Flask, com 3 destinos (aprovada / rejeitada / alerta)
+**antes** de ser efetivada.
 
-> **Sprint 1 done** (11/05/2026): stack 100% Docker, fluxo Solicitada → Worker.
+> **Sprint 1 done** (11/05): stack 100% Docker, fluxo Solicitada → Worker.
 >
-> **Sprint 2 done** (16/05/2026): detector com state, persistência de `SOLICITADA → EFETIVADA/REJEITADA`,
-> consumer de rejeições, 4 cenários e2e validados (feliz / auto-transf / valor alto / burst).
+> **Sprint 2 done** (16/05): detector com state, persistência de status no Postgres,
+> 4 cenários e2e (feliz / auto-transf / valor alto / burst).
 >
-> **Sprint 2.5 done** (16/05/2026): **PyFlink real** rodando. JVM Flink mini-cluster +
-> `KeyedProcessFunction` + `MapState` com TTL + event-time/watermark +
-> checkpoint EXACTLY_ONCE em RocksDB a cada 60s (validado: 7 checkpoints completos em log).
-> Mesmos tópicos e regras do detector Python anterior — `make e2e` passa contra PyFlink.
+> **Sprint 2.5 done** (16/05): **PyFlink real** — JVM + `KeyedProcessFunction` +
+> `MapState` com TTL + watermark + checkpoint EXACTLY_ONCE em RocksDB a cada 60s.
 >
-> ML real e schemas Avro: Sprint 3.
+> **Sprint 3 done** (16/05): **ML em produção**. XGBoost (ROC-AUC 0.9993) treinado
+> no build da imagem (`ml/train.py` com seed=42), servido por Flask + Gunicorn.
+> PyFlink chama `/predict` síncrono com **fail-open** (timeout 2s → segue só com
+> regras se ML cair). Decisão híbrida: regras DURAS primeiro (autotransf/burst/
+> valor inválido) + score ML segundo (threshold 0.95). `modelo_versao` salvo na
+> tabela `transferencia` (`rules-v1+xgboost-v1`). 5º cenário no e2e valida ML.
 
 ## Como rodar (do zero)
 
@@ -138,13 +142,16 @@ A `transferencia` no Postgres é a fonte de verdade do status:
 | 19 | `ObterExtratoHandlerTests` quebrado | ✅ 9/9 testes verdes |
 | 20 | enum `TipoTransferencia` aceitava só int | ✅ `JsonStringEnumConverter` (PIX/TED/TEF) |
 
-## Sprint 2 + 2.5 (done)
+## Sprint 2 + 2.5 + 3 (done)
 
-- ✅ Detector com state (rolling window 60s por CPF) — `pyflink/fraud_detector.py` (Python) e `pyflink/fraud_detector_job.py` (PyFlink real, em uso)
+- ✅ Detector com state (rolling window 60s por CPF) — `pyflink/fraud_detector_job.py` (PyFlink real, em uso)
 - ✅ **PyFlink 1.18** com event-time + watermark 5s + RocksDB state + checkpoint EXACTLY_ONCE
 - ✅ Persistência da `transferencia.status` no Postgres (SOLICITADA → EFETIVADA/REJEITADA)
-- ✅ `RejeicaoConsumer` no Worker fecha o ciclo de status
-- ✅ 4 cenários no `make e2e`: feliz, auto-transf, valor alto (ALERTA), burst (BURST_*)
+- ✅ `RejeicaoConsumer` no Worker fecha o ciclo de status, salva `score_fraude` e `modelo_versao`
+- ✅ **ML em produção:** XGBoost embedded em imagem Docker (`ml/Dockerfile` treina no build).
+  Flask `/predict` + `/metrics` servidos por Gunicorn. ROC-AUC 0.9993 em dataset sintético.
+- ✅ PyFlink chama `/predict` síncrono com **fail-open** (timeout 2s); decisão híbrida regras+score
+- ✅ 5 cenários no `make e2e`: feliz, auto-transf, valor alto (ALERTA), burst, **ML rejeita R$ 30k**
 
 ### Diagnóstico da virada de chave do PyFlink (anotado pra próxima)
 
@@ -156,10 +163,11 @@ Três problemas em série tiveram que cair pra subir o job:
 | `pemja` falha em "Include folder should be at /opt/java/openjdk/include but doesn't exist" | imagem flink:1.18 tem só JRE, `pemja` compila contra JDK | `apt-get install openjdk-11-jdk-headless` + linkar `jni.h` no JRE |
 | `'InternalKeyedProcessFunctionContext' object has no attribute 'output'` | PyFlink 1.18 Python tem bug em side outputs com `KeyedProcessFunction` | `yield` no operator + `.filter()` downstream pra rotear |
 
-## O que ainda não está pronto (Sprints 3+)
+## O que ainda não está pronto (Sprint 4+)
 
 - ❌ Avro + Schema Registry — hoje JSON
-- ❌ Modelo de ML treinado (`ml/train.ipynb`)
+- ❌ Feature store (Redis + Postgres warm) — features `valor_medio_24h` e `valor_p95_30d` hoje são placeholders
+- ❌ Async I/O do PyFlink chamando o ML (hoje síncrono — bloqueia slot)
 - ❌ Validação de saldo (transferir mais que tem ainda passa — Worker debita negativo)
 - ❌ PasswordHasher PBKDF2 (hoje SHA-256)
 - ❌ Validação de CPF com dígitos verificadores
@@ -168,6 +176,7 @@ Três problemas em série tiveram que cair pra subir o job:
 - ❌ Frontend ainda fora do compose (rodar `cd frontend && ng serve` manual)
 - ❌ Outbox pattern para garantir atomicidade entre persistir e publicar
 - ❌ PyFlink submetido ao cluster JM/TM externo (hoje em local-mode dentro do container)
+- ❌ Shadow mode (2 modelos em paralelo, só um decide — A/B online)
 
 Mapeado em [`CASE_TOP_PLAN.md`](CASE_TOP_PLAN.md).
 
