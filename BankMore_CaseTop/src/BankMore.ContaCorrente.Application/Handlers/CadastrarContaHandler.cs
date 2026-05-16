@@ -77,7 +77,7 @@ namespace BankMore.ContaCorrente.Application.Handlers
 
         private static void ValidarEntrada(CadastrarContaCommand request)
         {
-            if (string.IsNullOrWhiteSpace(request.Cpf) || request.Cpf.Length != 11)
+            if (!CpfValidator.IsValid(request.Cpf))
                 throw new ArgumentException("CPF inválido");
 
             if (string.IsNullOrWhiteSpace(request.Nome))
