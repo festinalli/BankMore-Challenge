@@ -57,6 +57,13 @@ from pyflink.datastream.connectors.kafka import (
 )
 from pyflink.datastream.functions import KeyedProcessFunction
 from pyflink.datastream.state import MapStateDescriptor, StateTtlConfig
+# NOTE: instrumentação Prometheus removida do PyFlink job — cloudpickle não
+# serializa os Counter/Histogram (locks internos) quando o operator é distribuído.
+# Alternativas avaliadas: lazy init no open() não resolve (operator roda no Python
+# SDK Worker do Beam, separado do main process onde estaria o /metrics endpoint).
+# Caminho oficial: Flink reporters nativos (PrometheusReporter via flink-conf.yaml)
+# scrape direto do JobManager/TaskManager. Reservado pra Sprint 5.
+# from prometheus_client import Counter as PromCounter, Histogram as PromHistogram, start_http_server
 
 # --------------------------------------------------------------------------------------
 # Config (env override)
@@ -84,6 +91,10 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 log = logging.getLogger("fraud-detector")
+
+# Prometheus removido — ver NOTE acima. PROM_PORT mantido só pra compatibilidade
+# com env do compose (futuro: Flink PrometheusReporter usará outra porta).
+PROM_PORT = int(os.getenv("PROM_PORT", "9103"))
 
 
 # --------------------------------------------------------------------------------------
@@ -215,6 +226,9 @@ class FraudDecider(KeyedProcessFunction):
         }
         if score_ml is not None:
             out["scoreFraude"] = round(score_ml, 4)
+
+        # Métricas removidas (cloudpickle não serializa Counter/Histogram do prometheus_client).
+        # Substituição: log estruturado abaixo + reporter nativo Flink (Sprint 5).
 
         if decisao == "APROVADA":
             log.info("APROVADA id=%s cpf=%s*** valor=%.2f tipo=%s score=%s",
@@ -397,6 +411,10 @@ def _sink(stream, topic: str, name: str) -> None:
 
 def main() -> int:
     log.info("Iniciando fraud-detector | brokers=%s source=%s", KAFKA_BROKERS, SOURCE_TOPIC)
+    # Prometheus HTTP server na thread paralela (não bloqueia o job).
+    # Prometheus /metrics removido — não compatível com cloudpickle dos operators.
+    # Use Flink PrometheusReporter nativo (flink-conf.yaml) no Sprint 5.
+    log.info("Prometheus endpoint do PyFlink desabilitado (Sprint 5)")
 
     config = Configuration()
     config.set_string("execution.checkpointing.mode", "EXACTLY_ONCE")

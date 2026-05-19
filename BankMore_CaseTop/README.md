@@ -49,6 +49,23 @@ Toda transferência passa por um job **PyFlink 1.18** que combina **regras duras
 > `/ops/fraude` (sem auth na v1) lista até 50 cards, cores por severidade, badge
 > live/offline, contadores. Cenário 7 do e2e abre stream + dispara fraude +
 > valida `data:` frame chegou.
+>
+> **Sprint 4.E done** (19/05): **Prometheus + Grafana**. Instrumentação completa:
+> - APIs .NET (`prometheus-net.AspNetCore`): `UseHttpMetrics()` + `/metrics`
+> - Worker (`prometheus-net` + `MetricServer` na porta 9102): contadores de
+>   transferência efetivada/compensada por tipo, tarifa cobrada (BRL),
+>   histograma de duração da efetivação
+> - ML service (`prometheus_client` no Flask): contadores por decisão,
+>   histograma de latência do `predict_proba`, distribuição do score,
+>   misses no Redis, gauge do threshold ativo
+> - Prometheus 2.54 scraping 4 jobs a cada 15s (TSDB 24h)
+> - Grafana 11.2 com dashboard provisionado `BankMore — Overview` (datasource
+>   Prometheus configurado via provisioning YAML, anonymous viewer ligado)
+>
+> Limitação assumida: PyFlink job **não exporta** Prometheus — `prometheus_client`
+> tem locks internos não-serializáveis pelo `cloudpickle` que o Flink usa pra
+> distribuir o operator. Sprint 5 substitui por `flink-conf.yaml` com reporter
+> nativo do Flink (JM/TM expõem métricas em porta dedicada).
 
 ## Como rodar (do zero)
 

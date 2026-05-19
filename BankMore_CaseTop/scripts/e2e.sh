@@ -7,7 +7,7 @@
 #
 # Pré-requisitos:
 #   - `make up` rodando (12 containers)
-#   - `make seed` já criou Alice (11111111111, R$ 10.000) e Bob (22222222222, R$ 500)
+#   - `make seed` já criou Alice (11144477735, R$ 10.000) e Bob (52998224725, R$ 500)
 #
 # Exit 0 = todos os asserts ok.
 
@@ -24,10 +24,10 @@ ok()   { echo "✓ $*"; }
 
 ALICE_TOKEN=$(curl -fsS -X POST $API_CONTA/api/contacorrente/login \
   -H "Content-Type: application/json" \
-  -d '{"cpf":"11111111111","senha":"senha123"}' | extract token)
+  -d '{"cpf":"11144477735","senha":"senha123"}' | extract token)
 BOB_TOKEN=$(curl -fsS -X POST $API_CONTA/api/contacorrente/login \
   -H "Content-Type: application/json" \
-  -d '{"cpf":"22222222222","senha":"senha123"}' | extract token)
+  -d '{"cpf":"52998224725","senha":"senha123"}' | extract token)
 test -n "$ALICE_TOKEN" -a -n "$BOB_TOKEN" || fail "tokens vazios"
 ok "login Alice/Bob"
 
@@ -39,7 +39,7 @@ echo "▶ Cenário 1: TED R\$ 200 Alice → Bob"
 SALDO_ANTES=$(curl -fsS $API_CONTA/api/contacorrente/saldo -H "Authorization: Bearer $ALICE_TOKEN" | extract saldo)
 RESP=$(curl -fsS -X POST $API_TRANSF/api/transferencia/efetuar \
   -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" \
-  -d '{"cpfDestino":"22222222222","valor":200.00,"tipo":"TED"}')
+  -d '{"cpfDestino":"52998224725","valor":200.00,"tipo":"TED"}')
 ID1=$(echo "$RESP" | extract id)
 echo "  resp: $RESP"
 sleep 5
@@ -60,7 +60,7 @@ echo
 echo "▶ Cenário 2: auto-transferência (Alice → Alice) — esperado 400"
 HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST $API_TRANSF/api/transferencia/efetuar \
   -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" \
-  -d '{"cpfDestino":"11111111111","valor":50,"tipo":"PIX"}')
+  -d '{"cpfDestino":"11144477735","valor":50,"tipo":"PIX"}')
 test "$HTTP" = "400" || fail "esperado 400 do controller, veio $HTTP"
 ok "controller rejeitou (HTTP 400) — defense in depth antes do Kafka"
 
@@ -74,7 +74,7 @@ echo "▶ Cenário 3: TED R\$ 12.000 Bob → Alice (alerta esperado, sem bloquei
 # Aqui só validamos que o detector emite ALERTA.
 RESP=$(curl -fsS -X POST $API_TRANSF/api/transferencia/efetuar \
   -H "Authorization: Bearer $BOB_TOKEN" -H "Content-Type: application/json" \
-  -d '{"cpfDestino":"11111111111","valor":12000,"tipo":"TED"}')
+  -d '{"cpfDestino":"11144477735","valor":12000,"tipo":"TED"}')
 ID3=$(echo "$RESP" | extract id)
 sleep 5
 
@@ -98,11 +98,11 @@ echo "▶ Cenário 4: 5 transferências TEF rápidas Bob → Alice (esperar ≥1
 for i in 1 2 3 4 5; do
   curl -s -o /dev/null -X POST $API_TRANSF/api/transferencia/efetuar \
     -H "Authorization: Bearer $BOB_TOKEN" -H "Content-Type: application/json" \
-    -d "{\"cpfDestino\":\"11111111111\",\"valor\":${i},\"tipo\":\"TEF\"}"
+    -d "{\"cpfDestino\":\"11144477735\",\"valor\":${i},\"tipo\":\"TEF\"}"
 done
 sleep 6
 
-BURST_COUNT=$($PSQL -c "SELECT COUNT(*) FROM transferencia WHERE motivo LIKE 'BURST%' AND cpf_origem='22222222222';" | tr -d ' ')
+BURST_COUNT=$($PSQL -c "SELECT COUNT(*) FROM transferencia WHERE motivo LIKE 'BURST%' AND cpf_origem='52998224725';" | tr -d ' ')
 test "$BURST_COUNT" -ge 1 || fail "esperava ≥1 BURST, veio $BURST_COUNT"
 ok "rejeições BURST registradas: $BURST_COUNT"
 
@@ -116,7 +116,7 @@ echo
 echo "▶ Cenário 5: ML detecta valor altíssimo (R\$ 30.000 de Alice) — esperado REJEITADA com motivo ML_SCORE_*"
 RESP=$(curl -fsS -X POST $API_TRANSF/api/transferencia/efetuar \
   -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" \
-  -d '{"cpfDestino":"22222222222","valor":30000,"tipo":"TED"}')
+  -d '{"cpfDestino":"52998224725","valor":30000,"tipo":"TED"}')
 ID5=$(echo "$RESP" | extract id)
 sleep 8
 
@@ -142,7 +142,7 @@ echo "▶ Cenário 6: saldo insuficiente (Bob → Alice R\$ 999.999) — esperad
 sleep 70
 RESP=$(curl -fsS -X POST $API_TRANSF/api/transferencia/efetuar \
   -H "Authorization: Bearer $BOB_TOKEN" -H "Content-Type: application/json" \
-  -d '{"cpfDestino":"11111111111","valor":999999,"tipo":"TED"}')
+  -d '{"cpfDestino":"11144477735","valor":999999,"tipo":"TED"}')
 ID6=$(echo "$RESP" | extract id)
 sleep 8
 
@@ -174,7 +174,7 @@ SSE_PID=$!
 sleep 3
 curl -fsS -X POST $API_TRANSF/api/transferencia/efetuar \
   -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" \
-  -d '{"cpfDestino":"22222222222","valor":29999,"tipo":"TED"}' > /dev/null
+  -d '{"cpfDestino":"52998224725","valor":29999,"tipo":"TED"}' > /dev/null
 wait $SSE_PID 2>/dev/null || true
 
 SSE_EVENTS=$(grep -c '^data: ' "$SSE_OUT" || true)

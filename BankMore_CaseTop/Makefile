@@ -70,10 +70,10 @@ topics:
 seed:
 	@curl -s -o /dev/null -w "Alice: HTTP %{http_code}\n" -X POST http://localhost:5000/api/contacorrente/criar \
 	  -H "Content-Type: application/json" \
-	  -d '{"nome":"Alice","cpf":"11111111111","senha":"senha123","saldoInicial":500000.00}'
+	  -d '{"nome":"Alice","cpf":"11144477735","senha":"senha123","saldoInicial":500000.00}'
 	@curl -s -o /dev/null -w "Bob:   HTTP %{http_code}\n" -X POST http://localhost:5000/api/contacorrente/criar \
 	  -H "Content-Type: application/json" \
-	  -d '{"nome":"Bob","cpf":"22222222222","senha":"senha123","saldoInicial":20000.00}'
+	  -d '{"nome":"Bob","cpf":"52998224725","senha":"senha123","saldoInicial":20000.00}'
 
 # ---------------------------------------------------------------------
 # e2e: assume seed já rodou (banco com Alice e Bob) — não recria contas.

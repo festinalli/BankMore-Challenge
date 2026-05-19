@@ -62,3 +62,6 @@ pyflink/wheels/*.whl
 data/raw/
 data/processed/
 mlruns/
+
+# IDE/session local — não commitar
+.claude/
