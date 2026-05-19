@@ -1,6 +1,4 @@
 using MediatR;
-using KafkaFlow;
-using KafkaFlow.Producers;
 using BankMore.Transferencia.Domain;
 using BankMore.Transferencia.Domain.Enums;
 using TransferenciaEntity = BankMore.Transferencia.Domain.Transferencia;
@@ -36,21 +34,20 @@ namespace BankMore.Transferencia.Application.Handlers
     }
 
     public class EfetuarTransferenciaHandler(
-        IProducerAccessor producers,
         ITransferenciaRepository repository
     ) : IRequestHandler<EfetuarTransferenciaCommand, EfetuarTransferenciaResult>
     {
-        private const string ProducerName = "transferencia-producer";
+        // Sprint 5.B — Outbox pattern: NÃO publica no Kafka direto.
+        // Handler grava transferencia + outbox row na MESMA TX.
+        // OutboxRelayHostedService publica do outbox de forma assíncrona com retries.
+        public const string TopicSolicitada = "transferencia.solicitada";
 
-        public async Task<EfetuarTransferenciaResult> Handle(EfetuarTransferenciaCommand request, CancellationToken cancellationToken)
+        public async Task<EfetuarTransferenciaResult> Handle(
+            EfetuarTransferenciaCommand request, CancellationToken cancellationToken)
         {
             var id = Guid.NewGuid().ToString();
             var now = DateTime.UtcNow;
 
-            // 1) Persiste como SOLICITADA antes do Kafka.
-            //    A tabela transferencia passa a ser fonte de verdade do status.
-            //    Limitação: não é outbox pattern — se o producer falhar depois,
-            //    fica órfã como SOLICITADA. Outbox entra como melhoria futura.
             var transferencia = new TransferenciaEntity
             {
                 Id = id,
@@ -62,10 +59,7 @@ namespace BankMore.Transferencia.Application.Handlers
                 Status = "SOLICITADA",
                 SolicitadaEm = now
             };
-            await repository.PersistirSolicitada(transferencia, cancellationToken);
 
-            // 2) Publica evento para o detector decidir
-            var producer = producers.GetProducer(ProducerName);
             var message = new TransferenciaSolicitadaMessage
             {
                 Id = id,
@@ -79,7 +73,17 @@ namespace BankMore.Transferencia.Application.Handlers
                 Canal = "WEB"
             };
 
-            await producer.ProduceAsync(request.CpfOrigem, message);
+            // Serializa pra JSON canônico (camelCase pra ficar consistente com o detector).
+            var payloadJson = Newtonsoft.Json.JsonConvert.SerializeObject(
+                message,
+                new Newtonsoft.Json.JsonSerializerSettings
+                {
+                    ContractResolver = new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver()
+                });
+
+            // Uma transação: transferencia + outbox row. Se algo falha, ROLLBACK total.
+            await repository.PersistirSolicitadaComOutbox(
+                transferencia, TopicSolicitada, payloadJson, cancellationToken);
 
             return new EfetuarTransferenciaResult(id, request.CorrelationId, "SOLICITADA");
         }

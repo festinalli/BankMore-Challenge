@@ -107,6 +107,29 @@ CREATE INDEX IF NOT EXISTS ix_analise_fraude_correlation ON analise_fraude (corr
 CREATE INDEX IF NOT EXISTS ix_analise_fraude_data        ON analise_fraude (decidido_em DESC);
 
 -- ============================================================
+-- transferencia_outbox (Sprint 5.B — outbox pattern)
+-- Garante atomicidade entre persistir e publicar no Kafka:
+-- handler grava transferencia + outbox na mesma TX. Relay polling
+-- separado publica e marca publicado_em (ou incrementa tentativas).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS transferencia_outbox (
+    id                  UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    transferencia_id    TEXT          NOT NULL REFERENCES transferencia(id) ON DELETE CASCADE,
+    topic               TEXT          NOT NULL,
+    payload             JSONB         NOT NULL,
+    criado_em           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    publicado_em        TIMESTAMPTZ,
+    tentativas          INTEGER       NOT NULL DEFAULT 0,
+    ultima_tentativa_em TIMESTAMPTZ,
+    ultimo_erro         TEXT
+);
+
+-- Index parcial: relay só varre não-publicados (TSDB-like efficiency)
+CREATE INDEX IF NOT EXISTS ix_outbox_pendente
+    ON transferencia_outbox (criado_em)
+    WHERE publicado_em IS NULL;
+
+-- ============================================================
 -- View saldo_conta — fonte única do saldo (SUM movimentos C - D)
 -- ============================================================
 CREATE OR REPLACE VIEW saldo_conta AS

@@ -9,10 +9,8 @@
     <ProjectReference Include="..\BankMore.Transferencia.Infrastructure\BankMore.Transferencia.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="KafkaFlow" Version="4.1.0" />
-    <PackageReference Include="KafkaFlow.LogHandler.Console" Version="4.1.0" />
-    <PackageReference Include="KafkaFlow.Microsoft.DependencyInjection" Version="4.1.0" />
-    <PackageReference Include="KafkaFlow.Serializer.NewtonsoftJson" Version="4.1.0" />
+    <!-- Sprint 5.B — KafkaFlow Producer removido; outbox-relay usa Confluent.Kafka direto -->
+    <PackageReference Include="Confluent.Kafka" Version="2.4.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.15.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />

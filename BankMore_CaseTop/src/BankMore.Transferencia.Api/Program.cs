@@ -1,12 +1,11 @@
 using BankMore.Transferencia.Api.Middleware;
+using BankMore.Transferencia.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Prometheus;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using System.Text.Json.Serialization;
-using KafkaFlow;
-using KafkaFlow.Serializer;
 using MediatR;
 using BankMore.Transferencia.Application.Handlers;
 
@@ -67,20 +66,8 @@ builder.Services.AddAuthentication(x =>
     };
 });
 
-var kafkaBroker = builder.Configuration.GetValue<string>("Kafka:Broker")
-    ?? Environment.GetEnvironmentVariable("KAFKA_BROKER")
-    ?? "localhost:9092";
-
-builder.Services.AddKafka(kafka => kafka
-    .UseConsoleLog()
-    .AddCluster(cluster => cluster
-        .WithBrokers(new[] { kafkaBroker })
-        .AddProducer("transferencia-producer", producer => producer
-            .DefaultTopic("transferencia.solicitada")
-            .AddMiddlewares(m => m.AddSerializer<NewtonsoftJsonSerializer>())
-        )
-    )
-);
+// Sprint 5.B — KafkaFlow producer removido. Publicação no Kafka é feita pelo
+// OutboxRelayHostedService a partir da tabela transferencia_outbox.
 
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(EfetuarTransferenciaHandler).Assembly));
 
@@ -90,14 +77,14 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddSingleton<BankMore.Transferencia.Domain.ITransferenciaRepository>(
     _ => new BankMore.Transferencia.Infrastructure.TransferenciaRepository(connectionString));
 
+// Sprint 5.B — Outbox relay como BackgroundService dentro da API.
+builder.Services.AddHostedService<OutboxRelayHostedService>();
+
 builder.Services.AddCors(options =>
     options.AddPolicy("DefaultPolicy", p =>
         p.WithOrigins("http://localhost:4200").AllowAnyMethod().AllowAnyHeader()));
 
 var app = builder.Build();
-
-var kafkaBus = app.Services.CreateKafkaBus();
-await kafkaBus.StartAsync();
 
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseHttpMetrics();
