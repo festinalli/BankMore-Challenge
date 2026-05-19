@@ -3,6 +3,7 @@ using Dapper;
 using Npgsql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Prometheus;
 using BankMore.Tarifas.Worker.Services;
 
 namespace BankMore.Tarifas.Worker.Handlers
@@ -27,6 +28,8 @@ namespace BankMore.Tarifas.Worker.Handlers
     {
         public async Task Handle(IMessageContext context, TransferenciaAprovadaMessage message)
         {
+            using var efetivacaoTimer = WorkerMetrics.EfetivacaoDuracao.NewTimer();
+
             var connectionString = configuration.GetConnectionString("DefaultConnection")
                 ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection ausente");
 
@@ -97,6 +100,9 @@ namespace BankMore.Tarifas.Worker.Handlers
                     logger.LogWarning(
                         "Compensada {Id}: SALDO_INSUFICIENTE saldo={Saldo:F2} debito={Debito:F2} cpf={Cpf}",
                         message.Id, saldoOrigem, totalDebito, Mask(message.CpfOrigem));
+
+                    WorkerMetrics.CompensacaoTotal.WithLabels("SALDO_INSUFICIENTE").Inc();
+                    WorkerMetrics.TransferenciaTotal.WithLabels("COMPENSADA", message.Tipo ?? "").Inc();
                     return;
                 }
 
@@ -184,6 +190,11 @@ namespace BankMore.Tarifas.Worker.Handlers
                 // Best-effort: erro aqui é loggado mas não rollback (transação já fechou).
                 await featureStore.RegistrarTransferenciaEfetivada(
                     message.CpfOrigem, message.Valor, agora, message.Id);
+
+                // Métricas de negócio (após commit pra evitar contar em rollback)
+                WorkerMetrics.TransferenciaTotal.WithLabels("EFETIVADA", message.Tipo ?? "").Inc();
+                if (message.Taxa > 0)
+                    WorkerMetrics.TarifaCobradaBrl.WithLabels(message.Tipo ?? "").Inc((double)message.Taxa);
             }
             catch (Exception ex)
             {

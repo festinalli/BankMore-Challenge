@@ -4,6 +4,7 @@ using KafkaFlow;
 using KafkaFlow.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Prometheus;
 using StackExchange.Redis;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -56,6 +57,13 @@ builder.Services.AddKafka(kafka => kafka
 );
 
 var host = builder.Build();
+
+// Prometheus: MetricServer standalone (Worker SDK não tem pipeline HTTP).
+// Usa HttpListener interno do .NET — expõe /metrics na porta 9102.
+// prometheus-net registra automaticamente métricas de runtime (CLR, GC, threads).
+var metricsPort = int.Parse(Environment.GetEnvironmentVariable("METRICS_PORT") ?? "9102");
+var metricsServer = new MetricServer(hostname: "+", port: metricsPort);
+metricsServer.Start();
 
 var kafkaBus = host.Services.CreateKafkaBus();
 await kafkaBus.StartAsync();

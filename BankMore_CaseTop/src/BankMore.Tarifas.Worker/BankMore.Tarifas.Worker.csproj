@@ -20,5 +20,6 @@
     <PackageReference Include="Dapper" Version="2.1.66" />
     <PackageReference Include="Npgsql" Version="8.0.3" />
     <PackageReference Include="StackExchange.Redis" Version="2.7.33" />
+    <PackageReference Include="prometheus-net" Version="8.2.1" />
   </ItemGroup>
 </Project>

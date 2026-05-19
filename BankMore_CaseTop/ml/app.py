@@ -28,7 +28,15 @@ from typing import Any
 import joblib
 import pandas as pd
 import redis
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 
 # -----------------------------------------------------------------------------
 # Config
@@ -63,6 +71,7 @@ _threshold = THRESHOLD if THRESHOLD > 0 else _metrics.get("threshold_recall_85",
 _model_version = _metrics.get("model_version", "unknown")
 
 log.info("✓ Modelo carregado: versão=%s, threshold=%.4f", _model_version, _threshold)
+# _metric_threshold é setado depois da declaração das métricas, abaixo.
 
 # Conexão Redis (singleton). Best-effort: se cair, _enriquecer_do_redis devolve {}.
 try:
@@ -74,7 +83,42 @@ except Exception as e:
     log.warning("⚠ Redis indisponível (%s) — features extras vão usar placeholders", e)
     _redis = None
 
-# Counters in-memory pra /metrics
+# -----------------------------------------------------------------------------
+# Prometheus metrics (formato exposition oficial — substitui o JSON anterior).
+# Histogram em segundos (convenção Prometheus); buckets cobrem 1ms..1s.
+# -----------------------------------------------------------------------------
+_registry = CollectorRegistry()
+_metric_predicoes = Counter(
+    "ml_predicoes_total",
+    "Total de predições, por decisão recomendada.",
+    ["decisao"],
+    registry=_registry,
+)
+_metric_latency = Histogram(
+    "ml_predict_duration_seconds",
+    "Latência da inferência /predict (somente predict_proba, sem feature lookup).",
+    buckets=(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
+    registry=_registry,
+)
+_metric_score = Histogram(
+    "ml_score_distribution",
+    "Distribuição dos scores retornados (0..1) — útil pra ver drift no modelo.",
+    buckets=(0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 1.0),
+    registry=_registry,
+)
+_metric_redis_misses = Counter(
+    "ml_feature_redis_miss_total",
+    "Tentativas de lookup ao Redis que falharam (best-effort, fail-open).",
+    registry=_registry,
+)
+_metric_threshold = Gauge(
+    "ml_threshold",
+    "Threshold de decisão calibrado (rejeita se score >= threshold).",
+    registry=_registry,
+)
+_metric_threshold.set(_threshold)
+
+# Counters in-memory pra /metrics (kept for backward-compat JSON endpoint)
 _stats_lock = Lock()
 _stats = {"total": 0, "rejeitar": 0, "aprovar": 0, "latencia_ms_total": 0.0}
 
@@ -160,6 +204,7 @@ def _enriquecer_do_redis(cpf: str, valor: float) -> dict:
         return out
     except Exception as e:
         log.debug("Redis lookup falhou (best-effort): %s", e)
+        _metric_redis_misses.inc()
         return {}
 
 
@@ -181,6 +226,13 @@ def health():
 
 @app.get("/metrics")
 def metrics():
+    """Formato exposition Prometheus — scrape oficial."""
+    return Response(generate_latest(_registry), mimetype=CONTENT_TYPE_LATEST)
+
+
+@app.get("/metrics/json")
+def metrics_json():
+    """Endpoint JSON antigo — mantido pra compatibilidade com tooling existente."""
     with _stats_lock:
         snap = dict(_stats)
     p_rejeitar = (snap["rejeitar"] / snap["total"]) if snap["total"] else 0.0
@@ -213,9 +265,13 @@ def predict():
     t0 = time.perf_counter()
     df = pd.DataFrame([feats])[ALL_FEATURES]
     score = float(_pipeline.predict_proba(df)[0, 1])
-    latencia_ms = (time.perf_counter() - t0) * 1000.0
+    latencia_s = time.perf_counter() - t0
+    latencia_ms = latencia_s * 1000.0
+    _metric_latency.observe(latencia_s)
+    _metric_score.observe(score)
 
     decisao = "REJEITAR" if score >= _threshold else "APROVAR"
+    _metric_predicoes.labels(decisao=decisao).inc()
 
     with _stats_lock:
         _stats["total"] += 1

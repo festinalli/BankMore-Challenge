@@ -1,5 +1,6 @@
 using BankMore.ContaCorrente.Api.Middleware;
 using BankMore.ContaCorrente.Application.Handlers;
+using Prometheus;
 using BankMore.ContaCorrente.Application.Services;
 using BankMore.ContaCorrente.Domain.Interfaces;
 using BankMore.ContaCorrente.Infrastructure.Repositories;
@@ -88,6 +89,11 @@ var app = builder.Build();
 
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseCors("DefaultPolicy");
+// Prometheus: /metrics (formato exposition) + métricas automáticas de HTTP
+// (http_request_duration_seconds, http_requests_in_progress, etc).
+// Exclui o próprio /metrics da medição pra não inflar contadores com scrape.
+app.UseHttpMetrics();
+app.MapMetrics("/metrics");
 app.UseSwagger();
 app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "BankMore Conta Corrente V1"));
 app.UseAuthentication();
