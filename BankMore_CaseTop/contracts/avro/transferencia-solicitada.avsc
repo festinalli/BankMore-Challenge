@@ -1,17 +1,17 @@
 {
   "type": "record",
-  "namespace": "com.bankmore.events",
+  "namespace": "com.bankmore.events.v1",
   "name": "TransferenciaSolicitada",
-  "doc": "Evento emitido pela API de Transferência quando o cliente solicita uma transferência. Ainda não foi efetivada — passa pelo PyFlink antes.",
+  "doc": "Evento emitido pela API de Transferência. Ainda NÃO foi efetivada — passa pelo PyFlink fraud detector antes. Versionado em namespace .v1 pra suportar evolução compatível (Schema Registry compatibility=BACKWARD).",
   "fields": [
-    { "name": "id", "type": { "type": "string", "logicalType": "uuid" }, "doc": "Identificador único da solicitação" },
-    { "name": "correlationId", "type": { "type": "string", "logicalType": "uuid" }, "doc": "ID propagado em logs/headers para tracing" },
-    { "name": "contaOrigemId", "type": "string", "doc": "GUID da conta de origem (não CPF — privacidade)" },
-    { "name": "cpfOrigemHash", "type": "string", "doc": "SHA-256 do CPF + salt rotativo, para análise sem expor PII" },
-    { "name": "cpfDestinoHash", "type": "string" },
-    { "name": "valor", "type": { "type": "bytes", "logicalType": "decimal", "precision": 18, "scale": 2 } },
-    { "name": "tipo", "type": { "type": "enum", "name": "TipoTransferencia", "symbols": ["PIX", "TED", "TEF"] } },
-    { "name": "timestamp", "type": { "type": "long", "logicalType": "timestamp-millis" }, "doc": "Quando a solicitação foi feita (event-time)" },
-    { "name": "canal", "type": { "type": "enum", "name": "Canal", "symbols": ["WEB", "MOBILE", "API"] }, "default": "WEB" }
+    { "name": "id",            "type": "string", "doc": "UUID da solicitação" },
+    { "name": "correlationId", "type": "string", "doc": "ID propagado em logs/headers para tracing distribuído" },
+    { "name": "cpfOrigem",     "type": "string", "doc": "CPF do titular origem (11 dígitos). Sprint 6: substituir por hash" },
+    { "name": "cpfDestino",    "type": "string", "doc": "CPF do destino (11 dígitos). Sprint 6: substituir por hash" },
+    { "name": "valor",         "type": "double", "doc": "Valor em BRL. Avro binário Sprint 6 vai usar decimal logicalType" },
+    { "name": "tipo",          "type": { "type": "enum", "name": "TipoTransferencia", "symbols": ["PIX", "TED", "TEF"] } },
+    { "name": "taxa",          "type": "double", "default": 0.0, "doc": "Valor da tarifa em BRL (PIX=0, TEF=1, TED=4)" },
+    { "name": "timestamp",     "type": "long",   "doc": "Epoch millis quando a solicitação foi feita (event-time)" },
+    { "name": "canal",         "type": "string", "default": "WEB", "doc": "WEB, MOBILE, API" }
   ]
 }

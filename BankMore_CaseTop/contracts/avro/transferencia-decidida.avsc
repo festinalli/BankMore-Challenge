@@ -1,16 +1,23 @@
 {
   "type": "record",
-  "namespace": "com.bankmore.events",
+  "namespace": "com.bankmore.events.v1",
   "name": "TransferenciaDecidida",
-  "doc": "Decisão do PyFlink sobre uma TransferenciaSolicitada. Side outputs: APROVADA, REJEITADA, ALERTA. Worker só processa APROVADA; ops monitora ALERTA.",
+  "doc": "Decisão do PyFlink sobre uma TransferenciaSolicitada. Publicada em 3 tópicos: transferencia.aprovada, transferencia.rejeitada, fraude.alerta (cópia de aprovadas com valor alto). O Worker só efetiva APROVADAS; ops monitora REJEITADAS e ALERTAS.",
   "fields": [
-    { "name": "id", "type": { "type": "string", "logicalType": "uuid" }, "doc": "ID da solicitação original (mesmo que TransferenciaSolicitada.id)" },
-    { "name": "correlationId", "type": { "type": "string", "logicalType": "uuid" } },
-    { "name": "decisao", "type": { "type": "enum", "name": "Decisao", "symbols": ["APROVADA", "REJEITADA", "ALERTA"] } },
-    { "name": "score", "type": "double", "doc": "Score de fraude [0.0, 1.0]" },
-    { "name": "modeloVersao", "type": "string", "doc": "Versão do modelo ML que decidiu, ex: xgboost-v2.3" },
-    { "name": "regrasAcionadas", "type": { "type": "array", "items": "string" }, "default": [], "doc": "Lista de regras determinísticas que dispararam (saldo_insuficiente, autotransferencia, etc.)" },
-    { "name": "decididoEm", "type": { "type": "long", "logicalType": "timestamp-millis" } },
-    { "name": "latenciaMs", "type": "int", "doc": "Tempo entre TransferenciaSolicitada.timestamp e decididoEm" }
+    { "name": "id",            "type": "string", "doc": "Mesmo id da TransferenciaSolicitada original" },
+    { "name": "correlationId", "type": "string" },
+    { "name": "cpfOrigem",     "type": "string" },
+    { "name": "cpfDestino",    "type": "string" },
+    { "name": "valor",         "type": "double" },
+    { "name": "tipo",          "type": { "type": "enum", "name": "TipoTransferencia", "symbols": ["PIX", "TED", "TEF"] } },
+    { "name": "taxa",          "type": "double", "default": 0.0 },
+    { "name": "timestamp",     "type": "long" },
+    { "name": "canal",         "type": "string", "default": "WEB" },
+    { "name": "decisao",       "type": { "type": "enum", "name": "Decisao", "symbols": ["APROVADA", "REJEITADA"] }, "doc": "APROVADA cai em transferencia.aprovada; REJEITADA em transferencia.rejeitada. ALERTA é cópia adicional, não substitui decisão." },
+    { "name": "motivos",       "type": { "type": "array", "items": "string" }, "default": [], "doc": "Lista de motivos: AUTO_TRANSFERENCIA, VALOR_INVALIDO, BURST_*, ML_SCORE_*" },
+    { "name": "scoreFraude",   "type": ["null", "double"], "default": null, "doc": "Score do XGBoost se ML foi consultado" },
+    { "name": "modeloVersao",  "type": "string", "default": "rules-v1", "doc": "Ex: rules-v1, rules-v1+xgboost-v1" },
+    { "name": "decididoEm",    "type": "long", "doc": "Epoch millis da decisão" },
+    { "name": "latenciaMs",    "type": "long", "doc": "decididoEm - timestamp (latência do pipeline)" }
   ]
 }
