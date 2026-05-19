@@ -107,10 +107,14 @@ CREATE INDEX IF NOT EXISTS ix_analise_fraude_correlation ON analise_fraude (corr
 CREATE INDEX IF NOT EXISTS ix_analise_fraude_data        ON analise_fraude (decidido_em DESC);
 
 -- ============================================================
--- transferencia_outbox (Sprint 5.B — outbox pattern)
+-- transferencia_outbox (Sprint 5.B — outbox pattern + Sprint 6.A — DLQ)
 -- Garante atomicidade entre persistir e publicar no Kafka:
 -- handler grava transferencia + outbox na mesma TX. Relay polling
--- separado publica e marca publicado_em (ou incrementa tentativas).
+-- separado publica e marca publicado_em.
+--
+-- Após N tentativas (default 5), o relay marca dead_letter_em — row vira
+-- DLQ e para de ser reprocessada automaticamente. Ops pode listar via
+-- GET /api/admin/outbox/dlq e fazer replay manual via POST /reprocess.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS transferencia_outbox (
     id                  UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -121,13 +125,19 @@ CREATE TABLE IF NOT EXISTS transferencia_outbox (
     publicado_em        TIMESTAMPTZ,
     tentativas          INTEGER       NOT NULL DEFAULT 0,
     ultima_tentativa_em TIMESTAMPTZ,
-    ultimo_erro         TEXT
+    ultimo_erro         TEXT,
+    dead_letter_em      TIMESTAMPTZ        -- Sprint 6.A: NULL = não DLQ; set = excluído do relay
 );
 
--- Index parcial: relay só varre não-publicados (TSDB-like efficiency)
+-- Index parcial: relay só varre rows ativas (não publicadas e não-DLQ)
 CREATE INDEX IF NOT EXISTS ix_outbox_pendente
     ON transferencia_outbox (criado_em)
-    WHERE publicado_em IS NULL;
+    WHERE publicado_em IS NULL AND dead_letter_em IS NULL;
+
+-- Index pra listar DLQ por ordem cronológica reversa (ops)
+CREATE INDEX IF NOT EXISTS ix_outbox_dlq
+    ON transferencia_outbox (dead_letter_em DESC)
+    WHERE dead_letter_em IS NOT NULL;
 
 -- ============================================================
 -- View saldo_conta — fonte única do saldo (SUM movimentos C - D)

@@ -71,11 +71,13 @@ public class TransferenciaRepository : ITransferenciaRepository
     {
         // FOR UPDATE SKIP LOCKED: múltiplos relays podem rodar em paralelo sem colidir
         // (cada um pega lotes distintos). Limite 100 por iteração pra evitar lock longo.
+        // Sprint 6.A — exclui rows em DLQ (dead_letter_em IS NOT NULL).
         await using var db = new NpgsqlConnection(_connectionString);
         const string sql = @"
             SELECT id, transferencia_id AS TransferenciaId, topic, payload::text AS PayloadJson, tentativas
             FROM transferencia_outbox
             WHERE publicado_em IS NULL
+              AND dead_letter_em IS NULL
               AND (ultima_tentativa_em IS NULL OR ultima_tentativa_em < NOW() - INTERVAL '5 seconds' * tentativas)
             ORDER BY criado_em
             LIMIT @limite
@@ -83,6 +85,47 @@ public class TransferenciaRepository : ITransferenciaRepository
         var rows = await db.QueryAsync<OutboxItem>(
             new CommandDefinition(sql, new { limite }, cancellationToken: ct));
         return rows.AsList();
+    }
+
+    public async Task MoverParaDeadLetter(Guid id, string motivo, CancellationToken ct)
+    {
+        await using var db = new NpgsqlConnection(_connectionString);
+        const string sql = @"
+            UPDATE transferencia_outbox
+               SET dead_letter_em = NOW(),
+                   ultimo_erro = LEFT('DLQ: ' || @motivo, 500),
+                   ultima_tentativa_em = NOW()
+             WHERE id = @id AND dead_letter_em IS NULL";
+        await db.ExecuteAsync(new CommandDefinition(sql, new { id, motivo }, cancellationToken: ct));
+    }
+
+    public async Task<IReadOnlyList<OutboxItem>> ListarDeadLetter(int limite, CancellationToken ct)
+    {
+        await using var db = new NpgsqlConnection(_connectionString);
+        const string sql = @"
+            SELECT id, transferencia_id AS TransferenciaId, topic, payload::text AS PayloadJson, tentativas
+            FROM transferencia_outbox
+            WHERE dead_letter_em IS NOT NULL
+            ORDER BY dead_letter_em DESC
+            LIMIT @limite";
+        var rows = await db.QueryAsync<OutboxItem>(
+            new CommandDefinition(sql, new { limite }, cancellationToken: ct));
+        return rows.AsList();
+    }
+
+    public async Task<bool> ReprocessarDeadLetter(Guid id, CancellationToken ct)
+    {
+        // Reset dead_letter_em + zera tentativas → relay vai pegar no próximo poll.
+        // Mantém ultimo_erro pra trilha de auditoria do incidente.
+        await using var db = new NpgsqlConnection(_connectionString);
+        const string sql = @"
+            UPDATE transferencia_outbox
+               SET dead_letter_em = NULL,
+                   tentativas = 0,
+                   ultima_tentativa_em = NULL
+             WHERE id = @id AND dead_letter_em IS NOT NULL AND publicado_em IS NULL";
+        var rows = await db.ExecuteAsync(new CommandDefinition(sql, new { id }, cancellationToken: ct));
+        return rows > 0;
     }
 
     public async Task MarcarPublicado(Guid id, CancellationToken ct)

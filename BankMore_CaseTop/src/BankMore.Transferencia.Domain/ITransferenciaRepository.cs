@@ -20,7 +20,7 @@ public interface ITransferenciaRepository
     Task<TransferenciaEntity?> ObterPorId(string id, CancellationToken ct);
 
     // -------- Outbox relay --------
-    /// <summary>Lê próximos N eventos não publicados (FOR UPDATE SKIP LOCKED).</summary>
+    /// <summary>Lê próximos N eventos não publicados e não-DLQ (FOR UPDATE SKIP LOCKED).</summary>
     Task<IReadOnlyList<OutboxItem>> LerPendentes(int limite, CancellationToken ct);
 
     /// <summary>Marca uma row como publicada.</summary>
@@ -28,6 +28,15 @@ public interface ITransferenciaRepository
 
     /// <summary>Incrementa tentativas e registra erro (não publicado).</summary>
     Task MarcarFalha(Guid id, string erro, CancellationToken ct);
+
+    /// <summary>Sprint 6.A — move para DLQ (set dead_letter_em).</summary>
+    Task MoverParaDeadLetter(Guid id, string motivo, CancellationToken ct);
+
+    /// <summary>Sprint 6.A — lista DLQ atual (ops).</summary>
+    Task<IReadOnlyList<OutboxItem>> ListarDeadLetter(int limite, CancellationToken ct);
+
+    /// <summary>Sprint 6.A — replay manual: zera dead_letter_em + tentativas (ops).</summary>
+    Task<bool> ReprocessarDeadLetter(Guid id, CancellationToken ct);
 }
 
 public sealed record OutboxItem(Guid Id, string TransferenciaId, string Topic, string PayloadJson, int Tentativas);
