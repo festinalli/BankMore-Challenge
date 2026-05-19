@@ -50,6 +50,26 @@ Toda transferência passa por um job **PyFlink 1.18** que combina **regras duras
 > live/offline, contadores. Cenário 7 do e2e abre stream + dispara fraude +
 > valida `data:` frame chegou.
 >
+> **Sprint 5.A done** (19/05): **Flink PrometheusReporter nativo**. JAR copiado
+> de `plugins/` pra `lib/` (PyFlink local-mode não carrega plugins automaticamente)
+> + reporter configurado via `Configuration()`. Porta `9249` exposta. Prometheus
+> agora raspa **5 targets** (4 .NET/Python + Flink). Métricas auto-instrumentadas:
+> `flink_jobmanager_numRunningJobs`, `flink_taskmanager_job_task_operator_KafkaProducer_record_send_rate`,
+> `flink_jobmanager_job_lastCheckpointDuration`, etc.
+>
+> **Sprint 5.B done** (19/05): **Outbox pattern**. Tabela `transferencia_outbox`
+> garante atomicidade Postgres↔Kafka. Handler grava transferência + outbox row
+> na MESMA transação. `OutboxRelayHostedService` (BackgroundService) polling com
+> `FOR UPDATE SKIP LOCKED`, `acks=all`, `enable.idempotence=true`, backoff
+> exponencial. KafkaFlow producer removido da Transferencia.Api — só
+> `Confluent.Kafka` no relay. Métricas Prometheus: `bankmore_outbox_*`.
+>
+> **Sprint 5.C done** (19/05): **Schemas Avro registrados no Schema Registry**.
+> `contracts/avro/{solicitada,decidida}.avsc` viraram fonte de verdade.
+> `make register-schemas` sobe 4 subjects com `compatibility=BACKWARD`.
+> Kafka UI mostra schemas vinculados. **Híbrido**: payload Kafka continua JSON
+> (migração pra Avro binário é Sprint 6 — ver ADR 0013).
+>
 > **Sprint 4.E done** (19/05): **Prometheus + Grafana**. Instrumentação completa:
 > - APIs .NET (`prometheus-net.AspNetCore`): `UseHttpMetrics()` + `/metrics`
 > - Worker (`prometheus-net` + `MetricServer` na porta 9102): contadores de

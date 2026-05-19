@@ -6,7 +6,7 @@ PSQL    := docker exec -i bankmore-postgres psql -U bankmore -d bankmore_db
 
 .PHONY: help env up down ps logs reset psql topics seed \
         run-contacorrente run-transferencia run-worker run-approver \
-        build test e2e pyflink-deps
+        build test e2e pyflink-deps register-schemas
 
 help:
 	@echo "BankMore Case Top — targets:"
@@ -37,6 +37,11 @@ env:
 
 pyflink-deps:
 	@bash pyflink/fetch_pyflink_libs.sh
+
+# Sprint 5.C — registra schemas Avro no Schema Registry (idempotente, BACKWARD compat).
+# Os arquivos .avsc em contracts/avro/ ficam committed no git como fonte de verdade.
+register-schemas:
+	@bash scripts/register-schemas.sh
 
 up: env pyflink-deps
 	$(COMPOSE) up -d --build
