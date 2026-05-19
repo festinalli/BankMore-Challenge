@@ -212,6 +212,9 @@ services:
       Kafka__Broker: kafka:29092
     networks: [bankmore]
 
+  # NOTE Sprint 6.B: AvroSerdes implementado em .NET (producer pronto pra Avro real).
+  # Ativação completa exige mudar consumer PyFlink (SimpleStringSchema→bytes) — fica
+  # pra Sprint 7. Em deploy de demo, deixar Outbox__AvroTopics=vazio (JSON).
   transferencia-api:
     build:
       context: ../..
@@ -230,6 +233,16 @@ services:
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-bankmore_db};Username=${POSTGRES_USER:-bankmore};Password=${POSTGRES_PASSWORD:-bankmore123};Maximum Pool Size=10
       Kafka__Broker: kafka:29092
       JWT_KEY: ${JWT_KEY:?env JWT_KEY é obrigatória}
+      # Sprint 5.B Outbox
+      Outbox__PollIntervalMs: "500"
+      Outbox__BatchSize: "50"
+      # Sprint 6.A — DLQ após 5 tentativas
+      Outbox__MaxTentativas: "5"
+      # Sprint 6.B — Avro binário disponível mas desligado por default (consumer PyFlink
+      # ainda lê String/JSON; Sprint 7 troca pra bytes e ativa esta lista).
+      # Exemplo de ativação: Outbox__AvroTopics=transferencia.solicitada
+      Outbox__AvroTopics: ""
+      SchemaRegistry__Url: http://schema-registry:8081
     networks: [bankmore]
 
   tarifas-worker:

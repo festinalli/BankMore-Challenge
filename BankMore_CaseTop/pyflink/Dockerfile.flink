@@ -44,13 +44,17 @@ RUN pip3 install --no-cache-dir /tmp/apache-flink-libraries-1.18.1.tar.gz && \
     rm /tmp/apache-flink-libraries-1.18.1.tar.gz
 
 # Camada 2: apache-flink (peq, ~6MB) + suas outras deps via PyPI
-# + prometheus-client pra expor /metrics na PROM_PORT (Sprint 4.E)
+# + prometheus-client (legacy do Sprint 4.E, mantido p/ compat)
+# + fastavro (Sprint 6.B — decode Avro binário sem JNI)
+# + requests (Sprint 6.B — busca schema do registry)
 RUN pip3 install --no-cache-dir \
         --default-timeout=600 \
         --retries=5 \
         --prefer-binary \
         "apache-flink==1.18.1" \
-        "prometheus-client==0.20.0"
+        "prometheus-client==0.20.0" \
+        "fastavro==1.9.4" \
+        "requests==2.31.0"
 
 # Kafka connector JAR — PyFlink precisa que esteja em /opt/flink/lib
 ARG KAFKA_CONNECTOR_VERSION=3.0.2-1.18

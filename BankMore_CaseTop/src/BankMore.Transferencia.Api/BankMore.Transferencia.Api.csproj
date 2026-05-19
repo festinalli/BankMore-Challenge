@@ -11,6 +11,9 @@
   <ItemGroup>
     <!-- Sprint 5.B — KafkaFlow Producer removido; outbox-relay usa Confluent.Kafka direto -->
     <PackageReference Include="Confluent.Kafka" Version="2.4.0" />
+    <!-- Sprint 6.B — Avro binário com Schema Registry -->
+    <PackageReference Include="Confluent.SchemaRegistry" Version="2.4.0" />
+    <PackageReference Include="Confluent.SchemaRegistry.Serdes.Avro" Version="2.4.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.15.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />

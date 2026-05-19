@@ -1,5 +1,6 @@
 using BankMore.Transferencia.Api.Middleware;
 using BankMore.Transferencia.Api.Services;
+using Confluent.SchemaRegistry;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Prometheus;
 using Microsoft.IdentityModel.Tokens;
@@ -76,6 +77,16 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
     ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection ausente");
 builder.Services.AddSingleton<BankMore.Transferencia.Domain.ITransferenciaRepository>(
     _ => new BankMore.Transferencia.Infrastructure.TransferenciaRepository(connectionString));
+
+// Sprint 6.B — Schema Registry client + AvroSerdes pra OutboxRelay serializar
+// Avro binário em transferencia.solicitada. Fallback JSON UTF-8 se SR cair
+// (resilience: OutboxRelay detecta avroSerdes==null e usa JSON).
+var schemaRegistryUrl = builder.Configuration["SchemaRegistry:Url"]
+    ?? Environment.GetEnvironmentVariable("SCHEMA_REGISTRY_URL")
+    ?? "http://schema-registry:8081";
+builder.Services.AddSingleton<ISchemaRegistryClient>(
+    _ => new CachedSchemaRegistryClient(new SchemaRegistryConfig { Url = schemaRegistryUrl }));
+builder.Services.AddSingleton<AvroSerdes>();
 
 // Sprint 5.B — Outbox relay como BackgroundService dentro da API.
 builder.Services.AddHostedService<OutboxRelayHostedService>();
