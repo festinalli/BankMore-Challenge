@@ -70,6 +70,19 @@ Toda transferência passa por um job **PyFlink 1.18** que combina **regras duras
 > Kafka UI mostra schemas vinculados. **Híbrido**: payload Kafka continua JSON
 > (migração pra Avro binário é Sprint 6 — ver ADR 0013).
 >
+> **Sprint 6.A done** (19/05): **DLQ no outbox**. Coluna `dead_letter_em` na
+> `transferencia_outbox`; após `Outbox__MaxTentativas` (default 5), relay move
+> automático. Endpoints admin `GET /api/admin/outbox/dlq` + `POST .../{id}/reprocess`.
+> Métrica `bankmore_outbox_dlq_total{motivo}`. ADR 0014.
+>
+> **Sprint 6.B done** (19/05): **Avro binário no producer .NET** (consumer PyFlink
+> ativação fica pra Sprint 7 — exige trocar `SimpleStringSchema` por bytes).
+> `AvroSerdes.cs` lê schema do registry, monta `GenericRecord` field-by-field,
+> usa `AvroSerializer<GenericRecord>` (wire format Confluent: magic byte +
+> schema_id + body). Switch por env: `Outbox__AvroTopics=transferencia.solicitada`.
+> Default OFF pra não quebrar consumer atual. `fastavro` + `requests` já no
+> `Dockerfile.flink` esperando ativação. ADR 0015.
+>
 > **Sprint 4.E done** (19/05): **Prometheus + Grafana**. Instrumentação completa:
 > - APIs .NET (`prometheus-net.AspNetCore`): `UseHttpMetrics()` + `/metrics`
 > - Worker (`prometheus-net` + `MetricServer` na porta 9102): contadores de
