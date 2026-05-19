@@ -58,6 +58,14 @@ RUN curl -fsSL \
         "https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/${KAFKA_CONNECTOR_VERSION}/flink-sql-connector-kafka-${KAFKA_CONNECTOR_VERSION}.jar" \
         -o /opt/flink/lib/flink-sql-connector-kafka.jar
 
+# Sprint 5.A — Prometheus reporter no classpath. PyFlink local-mode NÃO carrega
+# plugins/ automaticamente como o Flink standalone faz (classloader isolado).
+# Copiar pra lib/ tanto da imagem Flink quanto do apache-flink Python instalado.
+RUN PYFLINK_DIR=$(python3 -c "import pyflink, os; print(os.path.dirname(pyflink.__file__))") && \
+    cp /opt/flink/plugins/metrics-prometheus/flink-metrics-prometheus-1.18.1.jar /opt/flink/lib/ && \
+    cp /opt/flink/plugins/metrics-prometheus/flink-metrics-prometheus-1.18.1.jar "$PYFLINK_DIR/lib/" && \
+    echo "✓ Prometheus reporter JAR copiado pra lib/ (local-mode classpath)"
+
 WORKDIR /opt/job
 COPY fraud_detector_job.py /opt/job/
 

@@ -411,10 +411,6 @@ def _sink(stream, topic: str, name: str) -> None:
 
 def main() -> int:
     log.info("Iniciando fraud-detector | brokers=%s source=%s", KAFKA_BROKERS, SOURCE_TOPIC)
-    # Prometheus HTTP server na thread paralela (não bloqueia o job).
-    # Prometheus /metrics removido — não compatível com cloudpickle dos operators.
-    # Use Flink PrometheusReporter nativo (flink-conf.yaml) no Sprint 5.
-    log.info("Prometheus endpoint do PyFlink desabilitado (Sprint 5)")
 
     config = Configuration()
     config.set_string("execution.checkpointing.mode", "EXACTLY_ONCE")
@@ -422,6 +418,18 @@ def main() -> int:
     config.set_string("execution.checkpointing.min-pause", "30000 ms")
     config.set_string("execution.checkpointing.timeout", "10 min")
     config.set_string("state.backend.type", "rocksdb")
+
+    # Sprint 5.A — PrometheusReporter nativo do Flink.
+    # JAR já vem no flink:1.18 em /opt/flink/plugins/metrics-prometheus/.
+    # JM/TM expõem em :9249 (do range configurado). Métricas auto-instrumentadas
+    # do Flink: numRecordsIn/Out, latency, checkpoint duration, kafka lag, etc.
+    # Substitui o prometheus_client que não convivia com cloudpickle (Sprint 4.E).
+    config.set_string("metrics.reporter.prom.factory.class",
+                      "org.apache.flink.metrics.prometheus.PrometheusReporterFactory")
+    # Range pra evitar conflito caso 9249 esteja ocupada — Flink pega a 1ª livre.
+    config.set_string("metrics.reporter.prom.port", "9249-9260")
+    # Filtra métricas system pra reduzir cardinalidade no Prometheus
+    config.set_string("metrics.reporter.prom.filter.includes", "*:*:*")
 
     env = StreamExecutionEnvironment.get_execution_environment(config)
     # Sprint 4.C: 3 slots (= partitions do source). Mais que isso desperdiça

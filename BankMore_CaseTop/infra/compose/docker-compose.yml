@@ -300,7 +300,11 @@ services:
       ML_SERVICE_URL: http://fraud-ml:5003
       ML_TIMEOUT_SECONDS: "2"
       ML_REJEITAR_THRESHOLD: "0.95"
-      PROM_PORT: "9103"
+      # Sprint 5.A — Flink PrometheusReporter nativo (substitui prometheus_client
+      # do Sprint 4.E que não convivia com cloudpickle dos operators).
+      # Métricas auto: numRecordsIn/Out, checkpoint duration, kafka lag, latency.
+    ports:
+      - "9249:9249"   # Sprint 5.A — Prometheus scrape endpoint do Flink mini-cluster
     restart: on-failure
     networks: [bankmore]
 

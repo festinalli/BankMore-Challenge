@@ -27,13 +27,13 @@ scrape_configs:
       - targets: ['fraud-ml:5003']
         labels: { service: fraud-ml, layer: ml }
 
-  # fraud-detector: scrape desabilitado nesta versão.
-  # prometheus_client + cloudpickle dos operators do PyFlink Python não
-  # convivem (locks não-serializáveis). Sprint 5 substitui por
-  # Flink PrometheusReporter nativo (configurado via flink-conf.yaml,
-  # expõe métricas do JobManager+TaskManager numa porta dedicada).
-  # - job_name: fraud-detector
-  #   metrics_path: /metrics
-  #   static_configs:
-  #     - targets: ['fraud-detector:9103']
-  #       labels: { service: fraud-detector, layer: streaming }
+  # Sprint 5.A — fraud-detector via Flink PrometheusReporter nativo.
+  # JAR /opt/flink/plugins/metrics-prometheus/flink-metrics-prometheus-1.18.1.jar
+  # auto-carregado; reporter configurado via Configuration() no main() do job.
+  # Métricas auto-instrumentadas: Flink_Job_*, Flink_Task_*, KafkaSourceReader_*,
+  # KafkaSinkWriter_*, Status_JVM_*, Checkpoint_*.
+  - job_name: fraud-detector
+    metrics_path: /
+    static_configs:
+      - targets: ['fraud-detector:9249']
+        labels: { service: fraud-detector, layer: streaming }
