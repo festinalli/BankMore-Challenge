@@ -250,6 +250,7 @@ services:
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-bankmore_db};Username=${POSTGRES_USER:-bankmore};Password=${POSTGRES_PASSWORD:-bankmore123};Maximum Pool Size=10
       Kafka__Broker: kafka:29092
       Redis__Connection: redis:6379
+      METRICS_PORT: "9102"
     networks: [bankmore]
 
   # Sprint 3: ML scoring service (Flask + XGBoost embutido na imagem).
@@ -299,7 +300,44 @@ services:
       ML_SERVICE_URL: http://fraud-ml:5003
       ML_TIMEOUT_SECONDS: "2"
       ML_REJEITAR_THRESHOLD: "0.95"
+      PROM_PORT: "9103"
     restart: on-failure
+    networks: [bankmore]
+
+  # ============================================================
+  # Observability — Prometheus + Grafana (Sprint 5)
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: bankmore-prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=24h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks: [bankmore]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: bankmore-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
     networks: [bankmore]
 
 volumes:
@@ -308,6 +346,8 @@ volumes:
   kafka_data:
   flink_checkpoints:
   flink_savepoints:
+  prometheus_data:
+  grafana_data:
 
 networks:
   bankmore:

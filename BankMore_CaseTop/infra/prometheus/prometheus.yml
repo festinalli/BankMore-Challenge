@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: contacorrente-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['contacorrente-api:8080']
+        labels: { service: contacorrente-api, layer: api }
+
+  - job_name: transferencia-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['transferencia-api:8080']
+        labels: { service: transferencia-api, layer: api }
+
+  - job_name: tarifas-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['tarifas-worker:9102']
+        labels: { service: tarifas-worker, layer: worker }
+
+  - job_name: fraud-ml
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['fraud-ml:5003']
+        labels: { service: fraud-ml, layer: ml }
+
+  # fraud-detector: scrape desabilitado nesta versão.
+  # prometheus_client + cloudpickle dos operators do PyFlink Python não
+  # convivem (locks não-serializáveis). Sprint 5 substitui por
+  # Flink PrometheusReporter nativo (configurado via flink-conf.yaml,
+  # expõe métricas do JobManager+TaskManager numa porta dedicada).
+  # - job_name: fraud-detector
+  #   metrics_path: /metrics
+  #   static_configs:
+  #     - targets: ['fraud-detector:9103']
+  #       labels: { service: fraud-detector, layer: streaming }

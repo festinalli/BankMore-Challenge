@@ -1,0 +1,160 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Decisões/min (fraud-detector)",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{ "expr": "sum(rate(fraud_decisoes_total[1m])*60)" }],
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "options": { "colorMode": "value", "graphMode": "area" }
+    },
+    {
+      "type": "stat",
+      "title": "Aprovação rate",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{
+        "expr": "sum(rate(fraud_decisoes_total{decisao=\"APROVADA\"}[5m])) / sum(rate(fraud_decisoes_total[5m]))"
+      }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "mode": "absolute", "steps": [
+        { "color": "red", "value": null }, { "color": "yellow", "value": 0.7 }, { "color": "green", "value": 0.85 }
+      ]}}},
+      "options": { "colorMode": "background" }
+    },
+    {
+      "type": "stat",
+      "title": "ML predict p95 (ms)",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(ml_predict_duration_seconds_bucket[5m])) by (le)) * 1000"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [
+        { "color": "green", "value": null }, { "color": "yellow", "value": 100 }, { "color": "red", "value": 250 }
+      ]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Falhas ML (fail-open)",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{ "expr": "sum(increase(fraud_ml_failures_total[15m]))" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [
+        { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 10 }
+      ]}}}
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Decisões por classe (rate por min)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{
+        "expr": "sum by (decisao) (rate(fraud_decisoes_total[1m]) * 60)",
+        "legendFormat": "{{decisao}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 12 } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "ML latency (p50, p95, p99) em ms",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.5,  sum(rate(ml_predict_duration_seconds_bucket[1m])) by (le)) * 1000", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(ml_predict_duration_seconds_bucket[1m])) by (le)) * 1000", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(ml_predict_duration_seconds_bucket[1m])) by (le)) * 1000", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+
+    {
+      "type": "timeseries",
+      "title": "HTTP request rate (APIs)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{
+        "expr": "sum by (service, code) (rate(http_request_duration_seconds_count[1m]))",
+        "legendFormat": "{{service}} {{code}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Worker — transferências efetivadas/min por tipo",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{
+        "expr": "sum by (tipo) (rate(bankmore_worker_transferencia_total{status=\"EFETIVADA\"}[1m]) * 60)",
+        "legendFormat": "{{tipo}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Worker — efetivação p95 (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(bankmore_worker_efetivacao_duracao_seconds_bucket[1m])) by (le)) * 1000",
+        "legendFormat": "p95"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "ML score distribution (p50, p95)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.5,  sum(rate(ml_score_distribution_bucket[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(ml_score_distribution_bucket[5m])) by (le))", "legendFormat": "p95" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "min": 0, "max": 1 } }
+    },
+
+    {
+      "type": "stat",
+      "title": "Tarifa cobrada total (R$)",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 29 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{ "expr": "sum(bankmore_worker_tarifa_cobrada_brl_total)" }],
+      "fieldConfig": { "defaults": { "unit": "currencyBRL", "decimals": 2 } }
+    },
+    {
+      "type": "stat",
+      "title": "Compensações por SALDO_INSUFICIENTE (15min)",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 29 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{ "expr": "sum(increase(bankmore_worker_compensacao_total{motivo=\"SALDO_INSUFICIENTE\"}[15m]))" }]
+    },
+    {
+      "type": "stat",
+      "title": "Threshold ML",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 29 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{ "expr": "ml_threshold" }],
+      "fieldConfig": { "defaults": { "decimals": 4 } }
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["bankmore"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "BankMore — Overview",
+  "uid": "bankmore-overview",
+  "version": 1,
+  "weekStart": ""
+}
