@@ -33,6 +33,7 @@ Sprint 4 muda para submissão no cluster (e abre o caminho pra scale-out).
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -40,6 +41,8 @@ import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+
+import fastavro
 
 from pyflink.common import Configuration, Duration, Time, Types, WatermarkStrategy
 from pyflink.common.serialization import SimpleStringSchema
@@ -86,6 +89,10 @@ ML_SERVICE_URL          = os.getenv("ML_SERVICE_URL",         "http://fraud-ml:5
 ML_TIMEOUT_SECONDS      = float(os.getenv("ML_TIMEOUT_SECONDS",      "2"))
 ML_REJEITAR_THRESHOLD   = float(os.getenv("ML_REJEITAR_THRESHOLD",   "0.7"))
 
+# Sprint 7.A: Avro Schema Registry (consumer Avro binário, Confluent wire format)
+SCHEMA_REGISTRY_URL     = os.getenv("SCHEMA_REGISTRY_URL",    "http://schema-registry:8081")
+SCHEMA_REGISTRY_TIMEOUT = float(os.getenv("SCHEMA_REGISTRY_TIMEOUT", "3"))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -98,15 +105,67 @@ PROM_PORT = int(os.getenv("PROM_PORT", "9103"))
 
 
 # --------------------------------------------------------------------------------------
+# Decoder Avro/JSON híbrido — Sprint 7.A
+# --------------------------------------------------------------------------------------
+# Source usa SimpleStringSchema('ISO-8859-1') que preserva bytes 1-to-1 (latin-1
+# mapeia bytes 0-255 → codepoints 0-255 bijetivamente). Aqui detectamos o magic
+# byte Confluent (0x00) e decodificamos via fastavro; senão fallback JSON.
+#
+# Schema cache em variável de módulo: cada Python worker carrega no máximo uma
+# vez por schema_id. Não precisa de lock — GIL + writes idempotentes.
+_avro_schema_cache: dict[int, dict] = {}
+
+
+def _fetch_schema_by_id(schema_id: int) -> dict:
+    cached = _avro_schema_cache.get(schema_id)
+    if cached is not None:
+        return cached
+    url = f"{SCHEMA_REGISTRY_URL}/schemas/ids/{schema_id}"
+    with urllib.request.urlopen(url, timeout=SCHEMA_REGISTRY_TIMEOUT) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    schema = fastavro.parse_schema(json.loads(payload["schema"]))
+    _avro_schema_cache[schema_id] = schema
+    return schema
+
+
+def _decode_value(value: str) -> dict | None:
+    """
+    Decoda Kafka value: aceita Avro binário (Confluent wire format) OU JSON.
+
+    Retorna None se o valor for indecifrável (loga e descarta).
+    """
+    if not value:
+        return None
+    raw = value.encode("latin-1")
+    # Confluent wire: magic 0x00 + schema_id(4 bytes BE) + payload Avro
+    if len(raw) > 5 and raw[0] == 0x00:
+        schema_id = int.from_bytes(raw[1:5], "big")
+        try:
+            schema = _fetch_schema_by_id(schema_id)
+            return fastavro.schemaless_reader(io.BytesIO(raw[5:]), schema)
+        except Exception as e:
+            log.error("Falha decodificando Avro schema_id=%d: %s", schema_id, e)
+            return None
+    # Fallback JSON (compat Sprint 5/6, e e2e que ainda manda JSON puro)
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except Exception as e:
+            log.error("Payload nem Avro nem JSON: %s", e)
+            return None
+
+
+# --------------------------------------------------------------------------------------
 # Timestamp extraction
 # --------------------------------------------------------------------------------------
 class TransferenciaTimestampAssigner(TimestampAssigner):
     """Extrai event-time do campo `timestamp` (epoch millis) ou `timestampMs`."""
 
     def extract_timestamp(self, value: str, record_timestamp: int) -> int:
-        try:
-            payload = json.loads(value)
-        except json.JSONDecodeError:
+        payload = _decode_value(value)
+        if payload is None:
             return record_timestamp
 
         if isinstance(payload.get("timestampMs"), int):
@@ -189,10 +248,9 @@ class FraudDecider(KeyedProcessFunction):
         é feito downstream via .filter() + .sink_to() (workaround do bug de
         side-outputs em PyFlink 1.18 com KeyedProcessFunction).
         """
-        try:
-            raw = json.loads(value)
-        except json.JSONDecodeError as e:
-            log.error("JSON inválido descartado: %s | raw=%s", e, value[:200])
+        raw = _decode_value(value)
+        if raw is None:
+            log.error("Payload descartado (decode falhou): %s", value[:120])
             return
 
         payload = self._normalizar(raw)
@@ -337,13 +395,16 @@ class FraudDecider(KeyedProcessFunction):
 # Pipeline
 # --------------------------------------------------------------------------------------
 def build_pipeline(env: StreamExecutionEnvironment) -> None:
+    # Sprint 7.A: charset 'ISO-8859-1' preserva bytes Avro 1-to-1 (mapeia 0-255 bijetivo).
+    # SimpleStringSchema() default usa UTF-8 e corrompe bytes Avro (sequências inválidas
+    # viram U+FFFD). Latin-1 + .encode('latin-1') no decoder recupera os bytes originais.
     source = (
         KafkaSource.builder()
         .set_bootstrap_servers(KAFKA_BROKERS)
         .set_topics(SOURCE_TOPIC)
         .set_group_id(GROUP_ID)
         .set_starting_offsets(KafkaOffsetsInitializer.earliest())
-        .set_value_only_deserializer(SimpleStringSchema())
+        .set_value_only_deserializer(SimpleStringSchema("ISO-8859-1"))
         .build()
     )
 

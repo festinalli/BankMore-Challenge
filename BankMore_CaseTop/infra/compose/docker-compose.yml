@@ -212,9 +212,9 @@ services:
       Kafka__Broker: kafka:29092
     networks: [bankmore]
 
-  # NOTE Sprint 6.B: AvroSerdes implementado em .NET (producer pronto pra Avro real).
-  # Ativação completa exige mudar consumer PyFlink (SimpleStringSchema→bytes) — fica
-  # pra Sprint 7. Em deploy de demo, deixar Outbox__AvroTopics=vazio (JSON).
+  # Sprint 7.A: Avro end-to-end ATIVO. Producer .NET serializa transferencia.solicitada
+  # em Avro binário (Confluent wire format). Consumer PyFlink (fraud-detector) decoda
+  # via fastavro + schema-registry. Para reverter ao JSON puro, basta Outbox__AvroTopics="".
   transferencia-api:
     build:
       context: ../..
@@ -227,6 +227,9 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      # Sprint 7.A — producer Avro registra/baixa schema no boot
+      schema-registry:
+        condition: service_started
     ports:
       - "5001:8080"
     environment:
@@ -238,11 +241,18 @@ services:
       Outbox__BatchSize: "50"
       # Sprint 6.A — DLQ após 5 tentativas
       Outbox__MaxTentativas: "5"
-      # Sprint 6.B — Avro binário disponível mas desligado por default (consumer PyFlink
-      # ainda lê String/JSON; Sprint 7 troca pra bytes e ativa esta lista).
-      # Exemplo de ativação: Outbox__AvroTopics=transferencia.solicitada
-      Outbox__AvroTopics: ""
+      # Sprint 7.A — Avro binário ATIVO em transferencia.solicitada. Consumer PyFlink
+      # decoda via fastavro (latin-1 trick em SimpleStringSchema). Pra reverter ao JSON
+      # puro durante incidente: Outbox__AvroTopics="" e rebuild.
+      Outbox__AvroTopics: "transferencia.solicitada"
       SchemaRegistry__Url: http://schema-registry:8081
+      # Sprint 7.B — token admin pros endpoints /api/admin/outbox/*. Vazio = endpoint
+      # 503 (fail-closed). Default só pra demo; em prod, override no .env.
+      Outbox__AdminToken: ${OUTBOX_ADMIN_TOKEN:-dev-admin-not-for-prod}
+      # Sprint 7.C — retenção automática DLQ. 30d é safe pra investigação ops; ajustar
+      # se DLQ crescer (já tem métrica bankmore_outbox_dlq_expiradas_total).
+      Outbox__DlqRetentionDays: "30"
+      Outbox__DlqRetentionIntervalHours: "24"
     networks: [bankmore]
 
   tarifas-worker:
@@ -294,6 +304,9 @@ services:
         condition: service_completed_successfully
       fraud-ml:
         condition: service_healthy
+      # Sprint 7.A — consumer Avro precisa buscar schema por id
+      schema-registry:
+        condition: service_started
     environment:
       KAFKA_BROKERS: kafka:29092
       SOURCE_TOPIC: transferencia.solicitada
@@ -306,6 +319,9 @@ services:
       JANELA_BURST_SEGUNDOS: "60"
       WATERMARK_DELAY_SECONDS: "5"
       CHECKPOINT_INTERVAL_MS: "60000"
+      # Sprint 7.A — Avro Schema Registry (cache em memória por schema_id)
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      SCHEMA_REGISTRY_TIMEOUT: "3"
       # Sprint 3: chama o ML service. Threshold calibrado em 0.95 (entre
       # 0.7 agressivo e 0.991 do recall_85 do treino) — captura fraudes
       # claras (R$ ≥ 30k → score 0.99) sem bloquear valor alto legítimo
