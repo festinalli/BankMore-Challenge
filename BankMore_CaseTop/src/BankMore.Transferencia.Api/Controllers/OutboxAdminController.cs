@@ -1,16 +1,19 @@
+using BankMore.Transferencia.Api.Middleware;
 using BankMore.Transferencia.Domain;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BankMore.Transferencia.Api.Controllers;
 
 /// <summary>
-/// Sprint 6.A — endpoints administrativos do outbox/DLQ.
+/// Endpoints administrativos do outbox/DLQ.
 ///
-/// Sem auth na v1 (apenas em rede interna do compose). Sprint 7 deve
-/// adicionar bearer token específico pra role=ops.
+/// Sprint 6.A — endpoints sem auth (rede interna do compose).
+/// Sprint 7.B — bearer token via [RequireAdminToken]. Sem env Outbox__AdminToken,
+/// retorna 503 (fail-closed). Sprint 8 vai migrar pra JWT com role=ops.
 /// </summary>
 [ApiController]
 [Route("api/admin/outbox")]
+[RequireAdminToken]
 public class OutboxAdminController : ControllerBase
 {
     private readonly ITransferenciaRepository _repo;
