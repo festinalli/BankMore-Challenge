@@ -37,6 +37,9 @@ public interface ITransferenciaRepository
 
     /// <summary>Sprint 6.A — replay manual: zera dead_letter_em + tentativas (ops).</summary>
     Task<bool> ReprocessarDeadLetter(Guid id, CancellationToken ct);
+
+    /// <summary>Sprint 7.C — apaga DLQ rows mais antigas que N dias. Retorna n removidos.</summary>
+    Task<int> ExpirarDeadLetter(int diasRetencao, CancellationToken ct);
 }
 
 public sealed record OutboxItem(Guid Id, string TransferenciaId, string Topic, string PayloadJson, int Tentativas);

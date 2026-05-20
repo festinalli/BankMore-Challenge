@@ -91,6 +91,9 @@ builder.Services.AddSingleton<AvroSerdes>();
 // Sprint 5.B — Outbox relay como BackgroundService dentro da API.
 builder.Services.AddHostedService<OutboxRelayHostedService>();
 
+// Sprint 7.C — limpeza periódica de DLQ (default 30d, 1×/dia).
+builder.Services.AddHostedService<DlqRetentionHostedService>();
+
 builder.Services.AddCors(options =>
     options.AddPolicy("DefaultPolicy", p =>
         p.WithOrigins("http://localhost:4200").AllowAnyMethod().AllowAnyHeader()));

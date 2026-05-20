@@ -128,6 +128,25 @@ public class TransferenciaRepository : ITransferenciaRepository
         return rows > 0;
     }
 
+    /// <summary>
+    /// Sprint 7.C — apaga rows de DLQ mais antigas que <paramref name="diasRetencao"/>.
+    /// Retorna o número de linhas removidas. Operação idempotente: pode ser chamada
+    /// quantas vezes quiser, só apaga o que estiver fora da janela.
+    /// </summary>
+    public async Task<int> ExpirarDeadLetter(int diasRetencao, CancellationToken ct)
+    {
+        await using var db = new NpgsqlConnection(_connectionString);
+        // INTERVAL com placeholder não funciona direto no Npgsql/Dapper.
+        // Como o input vem de config interna (não de usuário), seguro fazer
+        // composição com Math.Clamp + literal numérico.
+        var dias = Math.Clamp(diasRetencao, 1, 3650);
+        var sql = $@"
+            DELETE FROM transferencia_outbox
+             WHERE dead_letter_em IS NOT NULL
+               AND dead_letter_em < NOW() - INTERVAL '{dias} days'";
+        return await db.ExecuteAsync(new CommandDefinition(sql, cancellationToken: ct));
+    }
+
     public async Task MarcarPublicado(Guid id, CancellationToken ct)
     {
         await using var db = new NpgsqlConnection(_connectionString);
