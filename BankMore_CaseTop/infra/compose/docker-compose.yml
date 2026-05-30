@@ -17,6 +17,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../db/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+      # Sprint 8 — schema do bounded context PIX (DICT, pagamentos, MED, QR, consentimentos)
+      - ../db/01-pix.sql:/docker-entrypoint-initdb.d/01-pix.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bankmore} -d ${POSTGRES_DB:-bankmore_db}"]
       interval: 5s
@@ -192,6 +194,40 @@ services:
   # ============================================================
   # Applications (.NET 8)
   # ============================================================
+  # ============================================================
+  # Sprint 8 — PIX real: bacen-sim (DICT + SPI/ISO 20022) + pix-api
+  # ============================================================
+  bacen-sim:
+    build:
+      context: ../..
+      dockerfile: src/BankMore.BacenSim/Dockerfile
+    container_name: bankmore-bacen-sim
+    ports:
+      - "5005:8080"   # DICT + SPI + Swagger + /metrics
+    restart: on-failure
+    networks: [bankmore]
+
+  pix-api:
+    build:
+      context: ../..
+      dockerfile: src/BankMore.Pix.Api/Dockerfile
+    container_name: bankmore-pix-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bacen-sim:
+        condition: service_healthy
+    ports:
+      - "5006:8080"
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-bankmore_db};Username=${POSTGRES_USER:-bankmore};Password=${POSTGRES_PASSWORD:-bankmore123};Maximum Pool Size=10
+      JWT_KEY: ${JWT_KEY:?env JWT_KEY é obrigatória}
+      BACEN_SIM_URL: http://bacen-sim:8080
+      # Sprint 8.E — scheduler de recorrência do PIX Automático
+      PixAutomatico__PollIntervalSeconds: "15"
+    restart: on-failure
+    networks: [bankmore]
+
   contacorrente-api:
     build:
       context: ../..

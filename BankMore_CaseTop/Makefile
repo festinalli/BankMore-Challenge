@@ -87,6 +87,10 @@ seed:
 e2e:
 	@bash scripts/e2e.sh
 
+# e2e do PIX real (Sprint 8): DICT, liquidação ISO 20022, QR, MED, Automático, NFC, Open Finance
+e2e-pix:
+	@bash scripts/e2e-pix.sh
+
 # ---------------------------------------------------------------------
 # Run local
 # ---------------------------------------------------------------------
