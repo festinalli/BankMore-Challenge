@@ -26,6 +26,8 @@ public sealed class PixPagamento
     public string? Txid { get; set; }
     public StatusPagamento Status { get; set; } = StatusPagamento.INICIADO;
     public string? MotivoRejeicao { get; set; }
+    public decimal? ScoreFraude { get; set; }
+    public string? ModeloVersao { get; set; }
     public string? Pacs008Xml { get; set; }
     public string? Pacs002Xml { get; set; }
     public string CorrelationId { get; init; } = "";

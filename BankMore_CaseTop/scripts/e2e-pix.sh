@@ -35,6 +35,16 @@ BOB_TOKEN=$(curl -fsS -X POST $API_CONTA/api/contacorrente/login \
 test -n "$ALICE_TOKEN" -a -n "$BOB_TOKEN" || fail "tokens vazios"
 ok "login Alice/Bob"
 
+# Reset do estado PIX de teste: o antifraude conta transações recentes do CPF (burst),
+# então execuções anteriores acumuladas fariam o ML rejeitar pagamentos legítimos.
+# Zerar torna o e2e idempotente e determinístico (ambiente de teste).
+$PSQL -c "DELETE FROM pix_devolucao WHERE pagamento_id IN (SELECT id FROM pix_pagamento WHERE cpf_origem IN ('$ALICE_CPF','$BOB_CPF'));" >/dev/null
+$PSQL -c "DELETE FROM pix_pagamento WHERE cpf_origem IN ('$ALICE_CPF','$BOB_CPF');" >/dev/null
+$PSQL -c "DELETE FROM pix_qrcode;" >/dev/null
+$PSQL -c "DELETE FROM pix_consentimento WHERE cpf_pagador IN ('$ALICE_CPF','$BOB_CPF');" >/dev/null
+$PSQL -c "DELETE FROM pix_nfc_token;" >/dev/null
+ok "estado PIX de teste resetado (count de burst zerado)"
+
 aliceh() { curl -fsS -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" "$@"; }
 bobh()   { curl -fsS -H "Authorization: Bearer $BOB_TOKEN"   -H "Content-Type: application/json" "$@"; }
 saldo()  { curl -fsS $API_CONTA/api/contacorrente/saldo -H "Authorization: Bearer $1" | extract saldo; }
@@ -114,6 +124,11 @@ test "$(echo "$SB_PRE_DEV > $SB_POS_DEV" | bc)" = "1" || fail "estorno não debi
 ok "MED devolveu via pacs.004 e estornou movimentos (Bob R\$ $SB_PRE_DEV → R\$ $SB_POS_DEV)"
 
 # ----------------------------------------------------------------------
+# Isola o grupo seguinte do burst acumulado pelos fluxos 2-5 (Alice fez vários
+# pagamentos em rajada — comportamento legítimo de teste, não de produção).
+$PSQL -c "DELETE FROM pix_devolucao WHERE pagamento_id IN (SELECT id FROM pix_pagamento WHERE cpf_origem='$ALICE_CPF');" >/dev/null
+$PSQL -c "DELETE FROM pix_pagamento WHERE cpf_origem='$ALICE_CPF';" >/dev/null
+
 echo; echo "▶ 6. PIX Automático — consentimento + scheduler de recorrência"
 CONS=$(aliceh -X POST $API_PIX/api/pix/consentimentos \
   -d "{\"tipo\":\"AUTOMATICO\",\"chaveRecebedor\":\"$BOB_CHAVE\",\"valorFixo\":29.90,\"periodicidade\":\"MENSAL\"}")
@@ -152,7 +167,25 @@ OFPAY=$(aliceh -X POST $API_PIX/api/pix/consentimentos/$OFC_ID/cobrar)
 test "$(echo "$OFPAY" | extract status)" = "LIQUIDADO" || fail "Open Finance não liquidou: $OFPAY"
 ok "Open Finance: pagamento iniciado por terceiro liquidado"
 
+# ----------------------------------------------------------------------
+echo; echo "▶ 9. Antifraude inline — PIX de valor altíssimo bloqueado pelo ML antes do SPI"
+SB_FRAUDE_ANTES=$(saldo $BOB_TOKEN)
+FRAUDE=$(pixpay "$ALICE_TOKEN" /api/pix/pagar "{\"chaveDestino\":\"$BOB_CHAVE\",\"valor\":50000.00}")
+echo "  resp: $FRAUDE"
+test "$(echo "$FRAUDE" | extract status)" = "REJEITADO" || fail "esperado REJEITADO por fraude, veio $(echo "$FRAUDE" | extract status)"
+echo "$FRAUDE" | grep -q "ANALISE_FRAUDE" || fail "motivo não é ANALISE_FRAUDE: $FRAUDE"
+SCORE=$(echo "$FRAUDE" | extract scoreFraude)
+python3 -c "import sys; sys.exit(0 if float('$SCORE')>=0.95 else 1)" || fail "score $SCORE abaixo do threshold"
+sleep 1
+SB_FRAUDE_DEPOIS=$(saldo $BOB_TOKEN)
+test "$SB_FRAUDE_ANTES" = "$SB_FRAUDE_DEPOIS" || fail "saldo Bob mudou — PIX fraudulento liquidou! (antes=$SB_FRAUDE_ANTES depois=$SB_FRAUDE_DEPOIS)"
+# Confirma que NÃO foi ao SPI (pacs008 nulo p/ rejeitado por fraude — bloqueado antes da liquidação)
+FRAUDE_ID=$(echo "$FRAUDE" | extract id)
+NAO_FOI_SPI=$($PSQL -c "SELECT pacs008_xml IS NULL FROM pix_pagamento WHERE id='$FRAUDE_ID';")
+test "$NAO_FOI_SPI" = "t" || fail "PIX fraudulento chegou a montar pacs.008 (deveria bloquear antes)"
+ok "PIX fraudulento bloqueado pelo ML (score=$SCORE) ANTES do SPI, sem liquidar"
+
 echo
 echo "════════════════════════════════════════════════════════════"
-echo "  ✓ TODOS OS 8 FLUXOS PIX PASSARAM"
+echo "  ✓ TODOS OS 9 FLUXOS PIX PASSARAM (incl. antifraude inline)"
 echo "════════════════════════════════════════════════════════════"

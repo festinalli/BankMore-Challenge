@@ -5,7 +5,7 @@ namespace BankMore.Pix.Application;
 
 public sealed record ResultadoPagamento(
     Guid Id, string E2eId, string Status, string? Motivo, decimal Valor,
-    string? CpfDestino, string TipoIniciacao);
+    string? CpfDestino, string TipoIniciacao, decimal? ScoreFraude = null);
 
 /// <summary>Pagamento PIX por chave (iniciação manual).</summary>
 public sealed record IniciarPagamentoCommand(
@@ -28,7 +28,8 @@ public sealed class IniciarPagamentoHandler : IRequestHandler<IniciarPagamentoCo
     }
 
     internal static ResultadoPagamento ToResultado(PixPagamento p) =>
-        new(p.Id, p.E2eId, p.Status.ToString(), p.MotivoRejeicao, p.Valor, p.CpfDestino, p.TipoIniciacao.ToString());
+        new(p.Id, p.E2eId, p.Status.ToString(), p.MotivoRejeicao, p.Valor, p.CpfDestino,
+            p.TipoIniciacao.ToString(), p.ScoreFraude);
 }
 
 /// <summary>Pagamento de um QR Code lido (txid resolve chave/valor).</summary>

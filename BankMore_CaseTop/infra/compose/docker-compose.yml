@@ -217,6 +217,9 @@ services:
         condition: service_healthy
       bacen-sim:
         condition: service_healthy
+      # Sprint 9 — antifraude inline chama o fraud-ml
+      fraud-ml:
+        condition: service_healthy
     ports:
       - "5006:8080"
     environment:
@@ -225,6 +228,10 @@ services:
       BACEN_SIM_URL: http://bacen-sim:8080
       # Sprint 8.E — scheduler de recorrência do PIX Automático
       PixAutomatico__PollIntervalSeconds: "15"
+      # Sprint 9 — antifraude inline (scoring síncrono antes da liquidação SPI)
+      FRAUDE_ML_URL: http://fraud-ml:5003
+      FRAUDE_HABILITADO: "true"
+      FRAUDE_THRESHOLD: "0.95"
     restart: on-failure
     networks: [bankmore]
 

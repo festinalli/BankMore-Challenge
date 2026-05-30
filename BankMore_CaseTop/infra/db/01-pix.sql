@@ -39,8 +39,10 @@ CREATE TABLE IF NOT EXISTS pix_pagamento (
                        CHECK (tipo_iniciacao IN ('MANUAL','QRCODE_ESTATICO','QRCODE_DINAMICO','NFC','AUTOMATICO','OPEN_FINANCE')),
     txid              TEXT,                                -- vínculo ao QR dinâmico/CoBV
     status            TEXT          NOT NULL DEFAULT 'INICIADO'
-                       CHECK (status IN ('INICIADO','RESOLVENDO_CHAVE','LIQUIDANDO','LIQUIDADO','REJEITADO','DEVOLVIDO')),
+                       CHECK (status IN ('INICIADO','RESOLVENDO_CHAVE','LIQUIDANDO','ANALISE_FRAUDE','LIQUIDADO','REJEITADO','DEVOLVIDO')),
     motivo_rejeicao   TEXT,
+    score_fraude      NUMERIC(5,4),                        -- Sprint 9: score ML inline (0-1)
+    modelo_versao     TEXT,                                -- Sprint 9: versão do modelo que decidiu
     pacs008_xml       TEXT,                                -- mensagem de iniciação (auditoria)
     pacs002_xml       TEXT,                                -- status report do SPI (auditoria)
     correlation_id    TEXT          NOT NULL,

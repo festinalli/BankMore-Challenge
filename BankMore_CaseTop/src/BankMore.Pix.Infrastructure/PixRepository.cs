@@ -66,9 +66,11 @@ public sealed class PixRepository : IPixRepository
         await using var db = Db();
         const string sql = @"INSERT INTO pix_pagamento
             (id, e2eid, cpf_origem, chave_destino, cpf_destino, ispb_destino, valor, tipo_iniciacao,
-             txid, status, motivo_rejeicao, pacs008_xml, pacs002_xml, correlation_id, iniciado_em, liquidado_em)
+             txid, status, motivo_rejeicao, score_fraude, modelo_versao, pacs008_xml, pacs002_xml,
+             correlation_id, iniciado_em, liquidado_em)
             VALUES (@Id, @E2eId, @CpfOrigem, @ChaveDestino, @CpfDestino, @IspbDestino, @Valor, @TipoIniciacao,
-             @Txid, @Status, @MotivoRejeicao, @Pacs008Xml, @Pacs002Xml, @CorrelationId, @IniciadoEm, @LiquidadoEm)";
+             @Txid, @Status, @MotivoRejeicao, @ScoreFraude, @ModeloVersao, @Pacs008Xml, @Pacs002Xml,
+             @CorrelationId, @IniciadoEm, @LiquidadoEm)";
         await db.ExecuteAsync(new CommandDefinition(sql, Map(p), cancellationToken: ct));
     }
 
@@ -78,6 +80,7 @@ public sealed class PixRepository : IPixRepository
         const string sql = @"UPDATE pix_pagamento SET
                                 chave_destino=@ChaveDestino, cpf_destino=@CpfDestino, ispb_destino=@IspbDestino,
                                 txid=@Txid, status=@Status, motivo_rejeicao=@MotivoRejeicao,
+                                score_fraude=@ScoreFraude, modelo_versao=@ModeloVersao,
                                 pacs008_xml=@Pacs008Xml, pacs002_xml=@Pacs002Xml, liquidado_em=@LiquidadoEm
                              WHERE id=@Id";
         await db.ExecuteAsync(new CommandDefinition(sql, Map(p), cancellationToken: ct));
@@ -87,7 +90,8 @@ public sealed class PixRepository : IPixRepository
     {
         p.Id, p.E2eId, p.CpfOrigem, p.ChaveDestino, p.CpfDestino, p.IspbDestino, p.Valor,
         TipoIniciacao = p.TipoIniciacao.ToString(), p.Txid, Status = p.Status.ToString(),
-        p.MotivoRejeicao, p.Pacs008Xml, p.Pacs002Xml, p.CorrelationId, p.IniciadoEm, p.LiquidadoEm
+        p.MotivoRejeicao, p.ScoreFraude, p.ModeloVersao, p.Pacs008Xml, p.Pacs002Xml,
+        p.CorrelationId, p.IniciadoEm, p.LiquidadoEm
     };
 
     public async Task<PixPagamento?> ObterPagamento(Guid id, CancellationToken ct)
@@ -104,6 +108,15 @@ public sealed class PixRepository : IPixRepository
             "SELECT * FROM pix_pagamento WHERE e2eid=@e2eId", new { e2eId }, cancellationToken: ct)));
     }
 
+    public async Task<int> ContarPagamentosRecentes(string cpfOrigem, TimeSpan janela, CancellationToken ct)
+    {
+        await using var db = Db();
+        var desde = DateTimeOffset.UtcNow - janela;
+        return await db.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM pix_pagamento WHERE cpf_origem=@cpfOrigem AND iniciado_em >= @desde",
+            new { cpfOrigem, desde }, cancellationToken: ct));
+    }
+
     private static PixPagamento? MapBack(dynamic? r)
     {
         if (r is null) return null;
@@ -113,6 +126,7 @@ public sealed class PixRepository : IPixRepository
             CpfDestino = r.cpf_destino, IspbDestino = r.ispb_destino, Valor = r.valor,
             TipoIniciacao = Enum.Parse<TipoIniciacao>((string)r.tipo_iniciacao), Txid = r.txid,
             Status = Enum.Parse<StatusPagamento>((string)r.status), MotivoRejeicao = r.motivo_rejeicao,
+            ScoreFraude = r.score_fraude, ModeloVersao = r.modelo_versao,
             Pacs008Xml = r.pacs008_xml, Pacs002Xml = r.pacs002_xml, CorrelationId = r.correlation_id,
             IniciadoEm = r.iniciado_em, LiquidadoEm = r.liquidado_em
         };

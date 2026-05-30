@@ -74,6 +74,21 @@ var bacenUrl = builder.Configuration["BacenSim:Url"]
 builder.Services.AddHttpClient<IDictClient, DictClient>(c => c.BaseAddress = new Uri(bacenUrl));
 builder.Services.AddHttpClient<ISpiClient, SpiClient>(c => c.BaseAddress = new Uri(bacenUrl));
 
+// Sprint 9 — antifraude inline (scoring síncrono no fraud-ml antes da liquidação)
+var fraudeUrl = builder.Configuration["Fraude:Url"]
+    ?? Environment.GetEnvironmentVariable("FRAUDE_ML_URL") ?? "http://fraud-ml:5003";
+builder.Services.AddHttpClient<IFraudeClient, FraudeClient>(c =>
+{
+    c.BaseAddress = new Uri(fraudeUrl);
+    c.Timeout = TimeSpan.FromSeconds(2);  // PIX é <10s; scoring não pode pendurar
+});
+var fraudeHabilitado = bool.Parse(builder.Configuration["Fraude:Habilitado"]
+    ?? Environment.GetEnvironmentVariable("FRAUDE_HABILITADO") ?? "true");
+var fraudeThreshold = double.Parse(builder.Configuration["Fraude:Threshold"]
+    ?? Environment.GetEnvironmentVariable("FRAUDE_THRESHOLD") ?? "0.95",
+    System.Globalization.CultureInfo.InvariantCulture);
+builder.Services.AddSingleton(new PixFraudeConfig(fraudeHabilitado, fraudeThreshold));
+
 builder.Services.AddScoped<PixLiquidacaoService>();
 
 // Sprint 8.E — scheduler de recorrência do PIX Automático

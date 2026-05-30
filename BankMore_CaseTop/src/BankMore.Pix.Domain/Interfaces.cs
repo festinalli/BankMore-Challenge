@@ -13,6 +13,7 @@ public interface IPixRepository
     Task AtualizarPagamento(PixPagamento p, CancellationToken ct);
     Task<PixPagamento?> ObterPagamento(Guid id, CancellationToken ct);
     Task<PixPagamento?> ObterPagamentoPorE2e(string e2eId, CancellationToken ct);
+    Task<int> ContarPagamentosRecentes(string cpfOrigem, TimeSpan janela, CancellationToken ct);
 
     // Liquidação atômica: debita origem + credita destino (movimentos) numa TX
     Task LiquidarMovimentos(string cpfOrigem, string? cpfDestino, decimal valor, string e2eId, CancellationToken ct);
@@ -63,3 +64,16 @@ public interface ISpiClient
 }
 
 public sealed record SpiLiquidacao(bool Sucesso, string Status, string? ReasonCode, string Pacs002Xml);
+
+/// <summary>
+/// Cliente do serviço de antifraude (fraud-ml). Scoring SÍNCRONO inline — o PIX é
+/// instantâneo (&lt;10s), então a análise precisa decidir antes da liquidação.
+/// </summary>
+public interface IFraudeClient
+{
+    Task<FraudeScore?> Avaliar(string cpfOrigem, decimal valor, string tipo, int countTxRecente, CancellationToken ct);
+}
+
+/// <param name="Score">0-1, quanto maior mais suspeito.</param>
+/// <param name="Threshold">limiar acima do qual o ML recomenda rejeitar.</param>
+public sealed record FraudeScore(double Score, double Threshold, string ModeloVersao, string DecisaoRecomendada);

@@ -3,6 +3,9 @@ using BankMore.Pix.Infrastructure;
 
 namespace BankMore.Pix.Application;
 
+/// <summary>Config do antifraude inline. Registrado como singleton no Program.cs.</summary>
+public sealed record PixFraudeConfig(bool Habilitado, double Threshold);
+
 /// <summary>
 /// Serviço de aplicação central da liquidação PIX. Orquestra o fluxo completo:
 ///
@@ -22,12 +25,18 @@ public sealed class PixLiquidacaoService
     private readonly IPixRepository _repo;
     private readonly IDictClient _dict;
     private readonly ISpiClient _spi;
+    private readonly IFraudeClient _fraude;
+    private readonly PixFraudeConfig _fraudeCfg;
 
-    public PixLiquidacaoService(IPixRepository repo, IDictClient dict, ISpiClient spi)
+    public PixLiquidacaoService(
+        IPixRepository repo, IDictClient dict, ISpiClient spi,
+        IFraudeClient fraude, PixFraudeConfig fraudeCfg)
     {
         _repo = repo;
         _dict = dict;
         _spi = spi;
+        _fraude = fraude;
+        _fraudeCfg = fraudeCfg;
     }
 
     public async Task<PixPagamento> LiquidarAsync(
@@ -36,6 +45,12 @@ public sealed class PixLiquidacaoService
     {
         var agora = DateTimeOffset.UtcNow;
         var e2e = EndToEndId.Gerar(IspbBankMore, agora);
+
+        // Conta transações recentes do CPF ANTES de inserir a atual (senão o próprio
+        // pagamento infla o count em 1 — off-by-one que disparava burst falso).
+        var countRecente = _fraudeCfg.Habilitado
+            ? await _repo.ContarPagamentosRecentes(cpfOrigem, TimeSpan.FromHours(1), ct)
+            : 0;
 
         var pgto = new PixPagamento
         {
@@ -64,6 +79,28 @@ public sealed class PixLiquidacaoService
             pgto.MotivoRejeicao = "AUTO_TRANSFERENCIA";
             await _repo.AtualizarPagamento(pgto, ct);
             return pgto;
+        }
+
+        // 2.5 Antifraude inline (síncrono) — o PIX é instantâneo, decide antes de liquidar.
+        // Reusa o fraud-ml (mesmo modelo XGBoost do fraud-detector PyFlink). Fail-open.
+        if (_fraudeCfg.Habilitado)
+        {
+            pgto.Status = StatusPagamento.ANALISE_FRAUDE;
+            await _repo.AtualizarPagamento(pgto, ct);
+
+            var score = await _fraude.Avaliar(cpfOrigem, valor, "PIX", countRecente, ct);
+            if (score is not null)
+            {
+                pgto.ScoreFraude = (decimal)Math.Round(score.Score, 4);
+                pgto.ModeloVersao = score.ModeloVersao;
+                if (score.Score >= _fraudeCfg.Threshold)
+                {
+                    pgto.Status = StatusPagamento.REJEITADO;
+                    pgto.MotivoRejeicao = $"ANALISE_FRAUDE_ML_{score.Score:F3}";
+                    await _repo.AtualizarPagamento(pgto, ct);
+                    return pgto;
+                }
+            }
         }
 
         // 3. Monta pacs.008 e envia ao SPI
