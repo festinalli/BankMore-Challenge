@@ -53,6 +53,19 @@ builder.Services.AddKafka(kafka => kafka
                 .AddTypedHandlers(handlers => handlers.AddHandler<RejeicaoConsumer>())
             )
         )
+        // Consumer 3 (Sprint 10.A): análise pós-liquidação do PIX — enriquece feature
+        // store + alerta de burst. Não bloqueia (o PIX já liquidou inline).
+        .AddConsumer(consumer => consumer
+            .Topic("pix.liquidada")
+            .WithGroupId("tarifas-worker-pix-pos")
+            .WithBufferSize(100)
+            .WithWorkersCount(2)
+            .WithAutoOffsetReset(AutoOffsetReset.Earliest)
+            .AddMiddlewares(middlewares => middlewares
+                .AddSingleTypeDeserializer<PixLiquidadaMessage, NewtonsoftJsonDeserializer>()
+                .AddTypedHandlers(handlers => handlers.AddHandler<PixLiquidadoConsumer>())
+            )
+        )
     )
 );
 

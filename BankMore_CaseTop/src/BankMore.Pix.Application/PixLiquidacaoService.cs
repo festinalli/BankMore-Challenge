@@ -27,16 +27,18 @@ public sealed class PixLiquidacaoService
     private readonly ISpiClient _spi;
     private readonly IFraudeClient _fraude;
     private readonly PixFraudeConfig _fraudeCfg;
+    private readonly IPixEventPublisher _publisher;
 
     public PixLiquidacaoService(
         IPixRepository repo, IDictClient dict, ISpiClient spi,
-        IFraudeClient fraude, PixFraudeConfig fraudeCfg)
+        IFraudeClient fraude, PixFraudeConfig fraudeCfg, IPixEventPublisher publisher)
     {
         _repo = repo;
         _dict = dict;
         _spi = spi;
         _fraude = fraude;
         _fraudeCfg = fraudeCfg;
+        _publisher = publisher;
     }
 
     public async Task<PixPagamento> LiquidarAsync(
@@ -127,6 +129,10 @@ public sealed class PixLiquidacaoService
         pgto.Status = StatusPagamento.LIQUIDADO;
         pgto.LiquidadoEm = DateTimeOffset.UtcNow;
         await _repo.AtualizarPagamento(pgto, ct);
+
+        // 5. Publica pix.liquidada pra análise pós-liquidação em streaming (Sprint 10.A).
+        // Best-effort — não desfaz a liquidação se o Kafka estiver indisponível.
+        await _publisher.PublicarLiquidada(pgto, ct);
         return pgto;
     }
 }

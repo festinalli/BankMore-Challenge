@@ -8,6 +8,8 @@
 #   6. PIX Automático — consentimento + scheduler de recorrência
 #   7. PIX por Aproximação (NFC) — token efêmero single-use
 #   8. Open Finance — consentimento de iniciação por terceiro
+#   9. Antifraude inline — PIX altíssimo bloqueado pelo ML antes do SPI
+#  10. Análise pós-liquidação streaming — pix.liquidada → feature store no Redis
 #
 # Pré-requisitos: make up && make seed (Alice 11144477735 / Bob 52998224725)
 # Exit 0 = todos os asserts ok.
@@ -185,7 +187,24 @@ NAO_FOI_SPI=$($PSQL -c "SELECT pacs008_xml IS NULL FROM pix_pagamento WHERE id='
 test "$NAO_FOI_SPI" = "t" || fail "PIX fraudulento chegou a montar pacs.008 (deveria bloquear antes)"
 ok "PIX fraudulento bloqueado pelo ML (score=$SCORE) ANTES do SPI, sem liquidar"
 
+# ----------------------------------------------------------------------
+echo; echo "▶ 10. Análise pós-liquidação streaming — pix.liquidada enriquece feature store"
+REDIS="docker exec bankmore-redis redis-cli"
+$REDIS DEL feat:$ALICE_CPF:count_1h >/dev/null
+PAY10=$(pixpay "$ALICE_TOKEN" /api/pix/pagar "{\"chaveDestino\":\"$BOB_CHAVE\",\"valor\":42.00}")
+test "$(echo "$PAY10" | extract status)" = "LIQUIDADO" || fail "pagamento p/ teste streaming não liquidou: $PAY10"
+# O worker consome pix.liquidada async e atualiza o Redis — espera o enriquecimento
+ENRIQUECEU=""
+for i in $(seq 1 15); do
+  C=$($REDIS GET feat:$ALICE_CPF:count_1h 2>/dev/null | tr -d '[:space:]')
+  if [ -n "$C" ] && [ "$C" -ge 1 ] 2>/dev/null; then ENRIQUECEU=1; break; fi
+  sleep 1
+done
+test -n "$ENRIQUECEU" || fail "feature store não foi enriquecido pelo consumer pix.liquidada em 15s"
+ok "pix.liquidada consumida pelo worker → feature store Redis enriquecido (count_1h=$C)"
+
 echo
 echo "════════════════════════════════════════════════════════════"
-echo "  ✓ TODOS OS 9 FLUXOS PIX PASSARAM (incl. antifraude inline)"
+echo "  ✓ TODOS OS 10 FLUXOS PIX PASSARAM"
+echo "    (antifraude inline + análise pós-liquidação em streaming)"
 echo "════════════════════════════════════════════════════════════"

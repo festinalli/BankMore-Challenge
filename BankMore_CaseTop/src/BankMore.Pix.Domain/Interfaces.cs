@@ -77,3 +77,12 @@ public interface IFraudeClient
 /// <param name="Score">0-1, quanto maior mais suspeito.</param>
 /// <param name="Threshold">limiar acima do qual o ML recomenda rejeitar.</param>
 public sealed record FraudeScore(double Score, double Threshold, string ModeloVersao, string DecisaoRecomendada);
+
+/// <summary>
+/// Publica eventos PIX no Kafka pra análise pós-liquidação em streaming (Sprint 10.A).
+/// Best-effort: falha de publicação não desfaz a liquidação (que já é definitiva).
+/// </summary>
+public interface IPixEventPublisher
+{
+    Task PublicarLiquidada(PixPagamento pagamento, CancellationToken ct);
+}

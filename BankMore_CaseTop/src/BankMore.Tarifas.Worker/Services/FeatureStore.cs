@@ -77,4 +77,51 @@ public class FeatureStore
             _logger.LogWarning(ex, "FeatureStore: erro registrando {Id} (best-effort, ignorado)", transferenciaId);
         }
     }
+
+    /// <summary>
+    /// Sprint 10.A — registra um PIX liquidado no MESMO feature store das transferências.
+    /// Assim o scoring (inline do PIX e streaming da transferência) passa a ver o
+    /// comportamento PIX do cliente — defesa em profundidade. Retorna o count_1h
+    /// pós-incremento pra detecção de burst pós-liquidação.
+    /// </summary>
+    public async Task<long> RegistrarPixLiquidado(
+        string cpfOrigem, decimal valor, DateTime quando, string pixId)
+    {
+        if (string.IsNullOrWhiteSpace(cpfOrigem)) return 0;
+
+        try
+        {
+            var db = _redis.GetDatabase();
+            var dedupKey = $"feat:dedup:pix:{pixId}";
+            var added = await db.StringSetAsync(dedupKey, "1", TimeSpan.FromHours(1), When.NotExists);
+            if (!added)
+            {
+                // Já contado (replay) — devolve o count atual sem incrementar de novo
+                var atual = await db.StringGetAsync($"feat:{cpfOrigem}:count_1h");
+                return atual.HasValue ? (long)atual : 0;
+            }
+
+            var tsMs = new DateTimeOffset(quando).ToUnixTimeMilliseconds();
+            var valorStr = ((double)valor).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            // count_1h é o que retornamos (INCR já devolve o novo valor)
+            var count = await db.StringIncrementAsync($"feat:{cpfOrigem}:count_1h");
+            await db.KeyExpireAsync($"feat:{cpfOrigem}:count_1h", TimeSpan.FromHours(1));
+
+            await Task.WhenAll(
+                db.ListLeftPushAsync($"feat:{cpfOrigem}:valores_24h", valorStr),
+                db.ListTrimAsync($"feat:{cpfOrigem}:valores_24h", 0, 99),
+                db.KeyExpireAsync($"feat:{cpfOrigem}:valores_24h", TimeSpan.FromHours(24)),
+                db.SortedSetAddAsync($"feat:{cpfOrigem}:valores_30d", valorStr + ":" + tsMs, tsMs),
+                db.SortedSetRemoveRangeByRankAsync($"feat:{cpfOrigem}:valores_30d", 0, -1001),
+                db.KeyExpireAsync($"feat:{cpfOrigem}:valores_30d", TimeSpan.FromDays(30)));
+
+            return count;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "FeatureStore: erro registrando PIX {Id} (best-effort)", pixId);
+            return 0;
+        }
+    }
 }

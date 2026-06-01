@@ -105,6 +105,7 @@ services:
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic transferencia.aprovada  --partitions 3 --replication-factor 1
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic transferencia.rejeitada --partitions 3 --replication-factor 1
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic fraude.alerta            --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic pix.liquidada           --partitions 3 --replication-factor 1
       echo '--- Tópicos ---' && kafka-topics --bootstrap-server kafka:29092 --list
       "
     restart: "no"
@@ -220,6 +221,11 @@ services:
       # Sprint 9 — antifraude inline chama o fraud-ml
       fraud-ml:
         condition: service_healthy
+      # Sprint 10.A — publica pix.liquidada no Kafka
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "5006:8080"
     environment:
@@ -232,6 +238,8 @@ services:
       FRAUDE_ML_URL: http://fraud-ml:5003
       FRAUDE_HABILITADO: "true"
       FRAUDE_THRESHOLD: "0.95"
+      # Sprint 10.A — publica pix.liquidada pra análise pós-liquidação em streaming
+      KAFKA_BROKER: kafka:29092
     restart: on-failure
     networks: [bankmore]
 

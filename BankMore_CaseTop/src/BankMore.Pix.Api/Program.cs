@@ -89,6 +89,12 @@ var fraudeThreshold = double.Parse(builder.Configuration["Fraude:Threshold"]
     System.Globalization.CultureInfo.InvariantCulture);
 builder.Services.AddSingleton(new PixFraudeConfig(fraudeHabilitado, fraudeThreshold));
 
+// Sprint 10.A — publisher de pix.liquidada pra análise pós-liquidação em streaming
+var kafkaBroker = builder.Configuration["Kafka:Broker"]
+    ?? Environment.GetEnvironmentVariable("KAFKA_BROKER") ?? "kafka:29092";
+builder.Services.AddSingleton<IPixEventPublisher>(sp =>
+    new PixEventPublisher(kafkaBroker, sp.GetRequiredService<ILogger<PixEventPublisher>>()));
+
 builder.Services.AddScoped<PixLiquidacaoService>();
 
 // Sprint 8.E — scheduler de recorrência do PIX Automático
