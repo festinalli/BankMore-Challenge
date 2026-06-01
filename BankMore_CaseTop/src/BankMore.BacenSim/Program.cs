@@ -1,20 +1,62 @@
+using System.Security.Cryptography.X509Certificates;
 using BankMore.BacenSim.Dict;
 using BankMore.BacenSim.Iso20022;
 using BankMore.BacenSim.Spi;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Prometheus;
 
 // ============================================================================
-// BankMore bacen-sim — simulador do BACEN (DICT + SPI) — Sprint 8.A
+// BankMore bacen-sim — simulador do BACEN (DICT + SPI) — Sprint 8.A / mTLS 10.B
 //
 // NÃO é o BACEN real. Conectar no SPI de verdade exige ISPB homologado,
 // certificado ICP-Brasil (mTLS na RSFN) e processo de homologação. Este serviço
 // simula o lado do BACEN pra demonstrar a interconexão de pagamentos instantâneos:
 // resolução de chave no DICT + liquidação ISO 20022 com SLA <10s.
+//
+// Sprint 10.B — mTLS: com MTLS_ENABLED=true, os endpoints DICT/SPI passam a exigir
+// um client certificate emitido pela CA (papel da AC Raiz ICP-Brasil), espelhando
+// a RSFN. HTTP 8080 segue aberto só pra health/metrics/swagger (management).
 // ============================================================================
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://+:8080");
+
+var mtlsEnabled = (Environment.GetEnvironmentVariable("MTLS_ENABLED") ?? "false") == "true";
+if (mtlsEnabled)
+{
+    var serverPfx = Environment.GetEnvironmentVariable("MTLS_SERVER_PFX") ?? "/certs/server.pfx";
+    var pfxPass = Environment.GetEnvironmentVariable("MTLS_PFX_PASS") ?? "bankmore";
+    var caPath = Environment.GetEnvironmentVariable("MTLS_CA_CRT") ?? "/certs/ca.crt";
+    var serverCert = new X509Certificate2(serverPfx, pfxPass);
+    var caCert = new X509Certificate2(caPath);
+
+    builder.WebHost.ConfigureKestrel(opts =>
+    {
+        // 8080 HTTP — management (health/metrics/swagger), sem mTLS
+        opts.ListenAnyIP(8080);
+        // 8443 HTTPS — DICT/SPI com mTLS (client cert obrigatório, validado contra a CA)
+        opts.ListenAnyIP(8443, lo => lo.UseHttps(serverCert, https =>
+        {
+            https.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
+            https.ClientCertificateValidation = (cert, _, _) => ValidaContraCa(cert, caCert);
+        }));
+    });
+}
+else
+{
+    builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://+:8080");
+}
+
+// Valida que o client cert foi emitido pela nossa CA (cadeia confiável customizada).
+// É o que o BACEN faz na RSFN: só aceita PSPs com cert da cadeia ICP-Brasil.
+static bool ValidaContraCa(X509Certificate2 clientCert, X509Certificate2 caCert)
+{
+    using var chain = new X509Chain();
+    chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+    chain.ChainPolicy.CustomTrustStore.Add(caCert);
+    chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+    return chain.Build(clientCert);
+}
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -22,6 +64,28 @@ builder.Services.AddSingleton<DictStore>();
 builder.Services.AddSingleton<SpiSettler>();
 
 var app = builder.Build();
+
+// Sprint 10.B — quando mTLS está ligado, DICT/SPI só respondem com client cert
+// presente (handshake mTLS na 8443). Bloqueia tentativa de acesso via HTTP 8080,
+// que existe apenas pra management (health/metrics/swagger).
+if (mtlsEnabled)
+{
+    app.Use(async (ctx, next) =>
+    {
+        var path = ctx.Request.Path.Value ?? "";
+        if ((path.StartsWith("/dict") || path.StartsWith("/spi")) && ctx.Connection.ClientCertificate is null)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await ctx.Response.WriteAsJsonAsync(new
+            {
+                erro = "mTLS obrigatório: client certificate ausente. A RSFN exige certificado da cadeia ICP-Brasil."
+            });
+            return;
+        }
+        await next();
+    });
+}
+
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseHttpMetrics();

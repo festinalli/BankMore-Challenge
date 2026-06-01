@@ -29,17 +29,25 @@ public sealed class RegistrarChaveHandler : IRequestHandler<RegistrarChaveComman
         // EVP é aleatória; demais validam formato mínimo
         var valor = cmd.Tipo == TipoChave.EVP ? Guid.NewGuid().ToString() : cmd.ValorChave;
 
+        var nome = await _repo.ObterNomePorCpf(cmd.Cpf, ct) ?? "";
+
+        // Idempotente: se a chave já existe localmente, ainda assim re-propaga pro DICT.
+        // O DICT é a fonte de verdade da resolução; se ele perdeu estado (ex: restart),
+        // re-registrar restaura a entrada sem erro. Só rejeita se for de OUTRO titular.
         var existente = await _repo.ObterChaveLocal(valor, ct);
         if (existente is not null)
-            return new RegistrarChaveResult(false, "Chave já registrada", existente.Id);
+        {
+            if (existente.IdContaCorrente != idConta)
+                return new RegistrarChaveResult(false, "Chave pertence a outro titular", null);
+            await _dict.RegistrarChave(valor, existente.Tipo.ToString(), cmd.Cpf, nome, ct);
+            return new RegistrarChaveResult(true, null, existente.Id);
+        }
 
         var chave = new PixChave
         {
             Tipo = cmd.Tipo, ValorChave = valor, IdContaCorrente = idConta, Status = "ATIVA",
         };
         await _repo.SalvarChave(chave, ct);
-
-        var nome = await _repo.ObterNomePorCpf(cmd.Cpf, ct) ?? "";
         await _dict.RegistrarChave(valor, cmd.Tipo.ToString(), cmd.Cpf, nome, ct);
 
         return new RegistrarChaveResult(true, null, chave.Id);

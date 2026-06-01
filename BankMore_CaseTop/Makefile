@@ -87,9 +87,15 @@ seed:
 e2e:
 	@bash scripts/e2e.sh
 
-# e2e do PIX real (Sprint 8): DICT, liquidação ISO 20022, QR, MED, Automático, NFC, Open Finance
+# e2e do PIX real (Sprint 8-10): DICT, ISO 20022, QR, MED, Automático, NFC, Open Finance,
+# antifraude inline, streaming pós-liquidação
 e2e-pix:
 	@bash scripts/e2e-pix.sh
+
+# Sprint 10.B — gera a cadeia de certificados mTLS (CA + server + client) da RSFN.
+# Rodar UMA vez antes do `make up` (os certs são montados nos containers via volume).
+certs:
+	@bash infra/certs/gen-certs.sh
 
 # ---------------------------------------------------------------------
 # Run local

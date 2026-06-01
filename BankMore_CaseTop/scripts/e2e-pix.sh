@@ -18,8 +18,19 @@ set -euo pipefail
 
 API_CONTA=http://localhost:5000
 API_PIX=http://localhost:5006
-BACEN=http://localhost:5005
 PSQL="docker exec -i bankmore-postgres psql -U bankmore -d bankmore_db -t -A"
+
+# Sprint 10.B — o DICT/SPI do bacen-sim exige mTLS (RSFN). Pra inspecionar o DICT
+# direto no teste, apresentamos o client cert (HTTPS 8443). Fallback: se os certs
+# não existirem (mTLS desligado), usa HTTP 8080.
+CERTS_DIR="$(cd "$(dirname "$0")/../infra/certs" 2>/dev/null && pwd || echo '')"
+if [ -n "$CERTS_DIR" ] && [ -f "$CERTS_DIR/client.crt" ]; then
+  BACEN_BASE="https://localhost:5443"
+  bacen_dict() { curl -fsS --cert "$CERTS_DIR/client.crt" --key "$CERTS_DIR/client.key" --cacert "$CERTS_DIR/ca.crt" "$BACEN_BASE$1"; }
+else
+  BACEN_BASE="http://localhost:5005"
+  bacen_dict() { curl -fsS "$BACEN_BASE$1"; }
+fi
 
 ALICE_CPF=11144477735
 BOB_CPF=52998224725
@@ -59,9 +70,9 @@ echo; echo "▶ 1. Registro de chaves no DICT"
 pixpay "$ALICE_TOKEN" /api/pix/chaves "{\"tipo\":\"EMAIL\",\"valorChave\":\"$ALICE_CHAVE\"}" >/dev/null
 pixpay "$BOB_TOKEN"   /api/pix/chaves "{\"tipo\":\"EMAIL\",\"valorChave\":\"$BOB_CHAVE\"}"  >/dev/null
 # Confirma no DICT do bacen-sim
-RESOLVE=$(curl -fsS $BACEN/dict/entries/$BOB_CHAVE | extract cpfTitular)
+RESOLVE=$(bacen_dict "/dict/entries/$BOB_CHAVE" | extract cpfTitular)
 test "$RESOLVE" = "$BOB_CPF" || fail "DICT não resolveu chave do Bob (veio '$RESOLVE')"
-ok "chaves registradas e resolvíveis no DICT"
+ok "chaves registradas e resolvíveis no DICT (via mTLS na RSFN)"
 
 # ----------------------------------------------------------------------
 echo; echo "▶ 2. Pagamento PIX por chave (Alice → Bob, R\$ 100)"

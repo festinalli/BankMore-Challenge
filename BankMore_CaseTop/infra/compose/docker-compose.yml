@@ -204,7 +204,16 @@ services:
       dockerfile: src/BankMore.BacenSim/Dockerfile
     container_name: bankmore-bacen-sim
     ports:
-      - "5005:8080"   # DICT + SPI + Swagger + /metrics
+      - "5005:8080"   # HTTP: health + Swagger + /metrics (management)
+      - "5443:8443"   # HTTPS mTLS: DICT + SPI (RSFN)
+    environment:
+      # Sprint 10.B — mTLS na RSFN. Desligue (MTLS_ENABLED=false) pra voltar a HTTP simples.
+      MTLS_ENABLED: "true"
+      MTLS_SERVER_PFX: /certs/server.pfx
+      MTLS_CA_CRT: /certs/ca.crt
+      MTLS_PFX_PASS: ${MTLS_PFX_PASS:-bankmore}
+    volumes:
+      - ../certs:/certs:ro
     restart: on-failure
     networks: [bankmore]
 
@@ -231,7 +240,12 @@ services:
     environment:
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-bankmore_db};Username=${POSTGRES_USER:-bankmore};Password=${POSTGRES_PASSWORD:-bankmore123};Maximum Pool Size=10
       JWT_KEY: ${JWT_KEY:?env JWT_KEY é obrigatória}
-      BACEN_SIM_URL: http://bacen-sim:8080
+      # Sprint 10.B — fala mTLS com o bacen-sim na 8443 (RSFN)
+      BACEN_SIM_URL: https://bacen-sim:8443
+      MTLS_ENABLED: "true"
+      MTLS_CLIENT_PFX: /certs/client.pfx
+      MTLS_CA_CRT: /certs/ca.crt
+      MTLS_PFX_PASS: ${MTLS_PFX_PASS:-bankmore}
       # Sprint 8.E — scheduler de recorrência do PIX Automático
       PixAutomatico__PollIntervalSeconds: "15"
       # Sprint 9 — antifraude inline (scoring síncrono antes da liquidação SPI)
@@ -240,6 +254,8 @@ services:
       FRAUDE_THRESHOLD: "0.95"
       # Sprint 10.A — publica pix.liquidada pra análise pós-liquidação em streaming
       KAFKA_BROKER: kafka:29092
+    volumes:
+      - ../certs:/certs:ro
     restart: on-failure
     networks: [bankmore]
 
@@ -325,6 +341,11 @@ services:
       Kafka__Broker: kafka:29092
       Redis__Connection: redis:6379
       METRICS_PORT: "9102"
+      # Sprint 10.A — limiar de count_1h pra alerta de burst pós-liquidação no PIX
+      PIX_LIMIAR_BURST_ALERTA: "8"
+    # librdkafka pode crashar no shutdown (SIGSEGV/139) após disconnect do broker;
+    # auto-restart mantém o consumer resiliente.
+    restart: on-failure
     networks: [bankmore]
 
   # Sprint 3: ML scoring service (Flask + XGBoost embutido na imagem).

@@ -69,10 +69,43 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddSingleton<IPixRepository>(_ => new PixRepository(connectionString));
 
 // Clients HTTP do bacen-sim (DICT + SPI)
+// Sprint 10.B — com MTLS_ENABLED, fala HTTPS na 8443 apresentando o client cert
+// (handshake mTLS da RSFN). Sem mTLS, HTTP 8080 simples.
+var mtlsEnabled = (Environment.GetEnvironmentVariable("MTLS_ENABLED") ?? "false") == "true";
 var bacenUrl = builder.Configuration["BacenSim:Url"]
-    ?? Environment.GetEnvironmentVariable("BACEN_SIM_URL") ?? "http://bacen-sim:8080";
-builder.Services.AddHttpClient<IDictClient, DictClient>(c => c.BaseAddress = new Uri(bacenUrl));
-builder.Services.AddHttpClient<ISpiClient, SpiClient>(c => c.BaseAddress = new Uri(bacenUrl));
+    ?? Environment.GetEnvironmentVariable("BACEN_SIM_URL")
+    ?? (mtlsEnabled ? "https://bacen-sim:8443" : "http://bacen-sim:8080");
+
+HttpMessageHandler BuildBacenHandler()
+{
+    var h = new HttpClientHandler();
+    if (mtlsEnabled)
+    {
+        var clientPfx = Environment.GetEnvironmentVariable("MTLS_CLIENT_PFX") ?? "/certs/client.pfx";
+        var pass = Environment.GetEnvironmentVariable("MTLS_PFX_PASS") ?? "bankmore";
+        var caPath = Environment.GetEnvironmentVariable("MTLS_CA_CRT") ?? "/certs/ca.crt";
+        var clientCert = new System.Security.Cryptography.X509Certificates.X509Certificate2(clientPfx, pass);
+        var caCert = new System.Security.Cryptography.X509Certificates.X509Certificate2(caPath);
+        h.ClientCertificates.Add(clientCert);
+        // Valida o server cert do bacen-sim contra a MESMA CA (self-signed, então
+        // não confiamos no trust store do SO — usamos custom root trust).
+        h.ServerCertificateCustomValidationCallback = (_, cert, _, _) =>
+        {
+            if (cert is null) return false;
+            using var chain = new System.Security.Cryptography.X509Certificates.X509Chain();
+            chain.ChainPolicy.TrustMode = System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
+            chain.ChainPolicy.CustomTrustStore.Add(caCert);
+            chain.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+            return chain.Build(new System.Security.Cryptography.X509Certificates.X509Certificate2(cert));
+        };
+    }
+    return h;
+}
+
+builder.Services.AddHttpClient<IDictClient, DictClient>(c => c.BaseAddress = new Uri(bacenUrl))
+    .ConfigurePrimaryHttpMessageHandler(BuildBacenHandler);
+builder.Services.AddHttpClient<ISpiClient, SpiClient>(c => c.BaseAddress = new Uri(bacenUrl))
+    .ConfigurePrimaryHttpMessageHandler(BuildBacenHandler);
 
 // Sprint 9 — antifraude inline (scoring síncrono no fraud-ml antes da liquidação)
 var fraudeUrl = builder.Configuration["Fraude:Url"]

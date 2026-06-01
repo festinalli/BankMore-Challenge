@@ -65,3 +65,9 @@ mlruns/
 
 # IDE/session local — não commitar
 .claude/
+
+# Sprint 10.B — certificados mTLS gerados localmente (não versionar material criptográfico)
+infra/certs/*.key
+infra/certs/*.crt
+infra/certs/*.pfx
+infra/certs/*.srl
