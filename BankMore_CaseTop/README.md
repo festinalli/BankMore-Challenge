@@ -1,9 +1,17 @@
-# BankMore — Real-Time Fraud Detection
+# BankMore — Real-Time Fraud Detection + PIX
 
-Sistema bancário event-driven com detecção de fraude em tempo real.
-Toda transferência passa por um job **PyFlink 1.18** que combina **regras duras**
-+ **modelo XGBoost** servido em Flask, com 3 destinos (aprovada / rejeitada / alerta)
-**antes** de ser efetivada.
+Sistema bancário event-driven com **detecção de fraude em tempo real** e um
+**arranjo PIX completo** (DICT, liquidação ISO 20022, MED, QR EMVCo, PIX Automático,
+NFC, Open Finance), com **mTLS na RSFN**.
+
+Toda transferência passa por um job **PyFlink 1.18** (regras duras + **XGBoost**)
+antes de ser efetivada. Todo PIX passa por **antifraude em dois níveis**: scoring
+**inline síncrono** antes da liquidação (bloqueia) + **análise pós-liquidação em
+streaming** que enriquece o feature store (observa). Arquitetura limpa (Clean
+Architecture + CQRS + DDD) em 3 bounded contexts: ContaCorrente, Transferência e PIX.
+
+> **Sprints 1–10 done.** Changelog resumido abaixo; decisões em `docs/adr/` (0001–0019).
+> Validação: `make e2e` (7 cenários de transferência) + `make e2e-pix` (**10 fluxos PIX**).
 
 > **Sprint 1 done** (11/05): stack 100% Docker, fluxo Solicitada → Worker.
 >
@@ -99,14 +107,65 @@ Toda transferência passa por um job **PyFlink 1.18** que combina **regras duras
 > tem locks internos não-serializáveis pelo `cloudpickle` que o Flink usa pra
 > distribuir o operator. Sprint 5 substitui por `flink-conf.yaml` com reporter
 > nativo do Flink (JM/TM expõem métricas em porta dedicada).
+>
+> **Sprint 7 done:** **Avro binário end-to-end**. Consumer PyFlink decoda o wire
+> format Confluent via `fastavro` (truque do `SimpleStringSchema('ISO-8859-1')` que
+> preserva bytes 1-to-1, evitando JNI). Auth shared-secret nos endpoints admin do
+> outbox (fail-closed). Retenção automática de DLQ (>30d). ADR 0016.
+>
+> **Sprint 8 done:** **PIX real**. Bounded context `BankMore.Pix` (Clean Arch/CQRS)
+> + serviço `bacen-sim` (DICT + SPI/ISO 20022). Fluxos: pagamento por chave, BR Code
+> EMVCo + CRC16, MED com `pacs.004` + estorno, PIX Automático (scheduler de
+> recorrência), NFC single-use, Open Finance. EndToEndId no formato BACEN, mensagens
+> `pacs.008/002/004` auditadas. ADR 0017.
+>
+> **Sprint 9 done:** **Antifraude inline no PIX**. Scoring ML síncrono (reusa o
+> `fraud-ml`/XGBoost) antes da liquidação SPI; `score >= threshold` → REJEITADO sem
+> ir ao SPI. Fail-open, timezone `America/Sao_Paulo`, status `ANALISE_FRAUDE` +
+> `score_fraude` persistido. ADR 0018.
+>
+> **Sprint 10 done:** **Hardening de produção.** (A) Análise pós-liquidação em
+> streaming: `pix-api` publica `pix.liquidada` → `Tarifas.Worker` enriquece o
+> feature store Redis + alerta de burst. (B) **mTLS na RSFN**: CA self-signed
+> (papel da ICP-Brasil), `bacen-sim` exige client cert na 8443, `pix-api` apresenta.
+> ADR 0019.
+
+## Arquitetura do PIX (Sprints 8–10)
+
+```
+[Angular/cliente]
+    │ POST /api/pix/pagar (JWT)            POST /api/pix/{qrcode,nfc,consentimentos,med}
+    ▼
+[Pix.Api :5006] ── Clean Arch + CQRS + MediatR ──────────────────────────────┐
+    │ 1. resolve chave no DICT ──────────────► [bacen-sim :8443]  (mTLS / RSFN)│
+    │ 2. ANTIFRAUDE INLINE (síncrono) ───────► [fraud-ml :5003]   score>=thr?  │
+    │      └─ score alto → REJEITADO (não liquida, status ANALISE_FRAUDE)      │
+    │ 3. monta pacs.008 → SPI ───────────────► [bacen-sim SPI]    pacs.002 ACSC│
+    │ 4. liquida movimentos (D origem / C destino, atômico no Postgres)        │
+    │ 5. publica pix.liquidada ──────────────► [Kafka]                         │
+    ▼                                              │                           │
+[Postgres] pix_pagamento (state machine,           ▼                           │
+  pacs.008/002 auditados, score_fraude)     [Tarifas.Worker]  consumer pix     │
+                                             └─ enriquece feature store Redis   │
+                                                + alerta burst pós-liquidação ──┘
+```
+
+**Dois níveis de antifraude:** inline bloqueia na borda (rápido, antes do SPI);
+streaming observa na janela (pós-fato, enriquece o modelo p/ os próximos pagamentos).
+
+**mTLS:** os endpoints DICT/SPI do `bacen-sim` só respondem sob HTTPS 8443 com client
+cert emitido pela CA. HTTP 8080 fica só pra management (health/metrics/swagger).
 
 ## Como rodar (do zero)
 
 ```bash
 make pyflink-deps     # baixa apache-flink-libraries (220MB) no host — só na 1ª vez
-make up               # builda imagens (PyFlink + .NET) e sobe os 12 containers
-make seed             # cria Alice (R$10k) e Bob (R$20k)
-make e2e              # 7 cenários: feliz, auto-transf, valor alto, burst, ML, saldo, painel SSE
+make certs            # gera a cadeia mTLS da RSFN (CA + server + client) — só na 1ª vez
+make up               # builda imagens (PyFlink + .NET) e sobe os containers
+make seed             # cria Alice (R$500k) e Bob (R$20k)
+make e2e              # 7 cenários de transferência: feliz, auto-transf, valor alto, burst, ML, saldo, SSE
+make e2e-pix          # 10 fluxos PIX: DICT, ISO 20022, QR, MED, Automático, NFC, Open Finance,
+                      #                antifraude inline, streaming pós-liquidação
 bash scripts/bench.sh # micro-bench: lat p50/p95 + throughput de N transferências paralelas
 ```
 
@@ -122,9 +181,12 @@ make e2e            # valida fluxo end-to-end (Alice → Bob, R$ 200 TED, valida
 Acesse:
 - **ContaCorrente API**: http://localhost:5000/swagger
 - **Transferência API**: http://localhost:5001/swagger
+- **PIX API**: http://localhost:5006/swagger
+- **bacen-sim** (DICT+SPI): http://localhost:5005/swagger (HTTP mgmt) · https://localhost:5443 (mTLS)
 - **Kafka UI**: http://localhost:8080
 - **Flink UI**: http://localhost:8082
 - **Schema Registry**: http://localhost:8085
+- **Grafana**: http://localhost:3000 · **Prometheus**: http://localhost:9090
 - **Postgres**: `make psql`
 - **Painel ops (SSE)**: `cd frontend && ng serve` → http://localhost:4200/ops/fraude
 
@@ -132,27 +194,31 @@ Acesse:
 
 | Camada | Tech |
 |---|---|
-| Backend | .NET 8 LTS, KafkaFlow 4.1, Dapper |
-| Mensageria | Apache Kafka 7.5 + Zookeeper + Schema Registry + Kafka UI |
-| Streaming | Apache Flink 1.18 (placeholder p/ Sprint 2 — hoje `auto_approver.py`) |
+| Backend | .NET 8 LTS, Clean Arch + CQRS (MediatR), KafkaFlow, Dapper |
+| Mensageria | Apache Kafka 7.5 + Zookeeper + Schema Registry (Avro binário) + Kafka UI |
+| Streaming | Apache Flink 1.18 / PyFlink — `KeyedProcessFunction` + RocksDB + checkpoint EXACTLY_ONCE |
+| ML | XGBoost (ROC-AUC 0.9993) + Flask/Gunicorn — scoring síncrono inline (PIX) e via stream (transf.) |
+| PIX | `bacen-sim` (DICT + SPI/ISO 20022 `pacs.008/002/004`), BR Code EMVCo, MED, mTLS na RSFN |
 | Banco | PostgreSQL 16 com `NUMERIC(18,2)` em tudo que é dinheiro |
-| Cache | Redis 7 (feature store para o ML — Sprint 3) |
+| Cache | Redis 7 — feature store rolling (count_1h, valores_24h/30d) compartilhado transf.+PIX |
 | Frontend | Angular 21 standalone (login + dashboard + extrato + transferência + `/ops/fraude` SSE) |
-| Observabilidade | Prometheus + Grafana + OTEL — Sprint 4 |
+| Observabilidade | Prometheus + Grafana (5 targets, dashboards provisionados) |
 
 ## Estrutura
 
 ```
 contracts/avro/      Schemas Avro dos eventos Kafka (versionados)
-infra/compose/       docker-compose.yml unificado
-infra/db/init.sql    Schema canônico Postgres
-src/                 Solução .NET (6 projetos + tests)
+infra/compose/       docker-compose.yml unificado (16 serviços)
+infra/db/            init.sql (core) + 01-pix.sql (bounded context PIX)
+infra/certs/         gen-certs.sh — cadeia mTLS da RSFN (keys no .gitignore)
+src/                 Solução .NET — ContaCorrente, Transferencia, Pix, BacenSim, Tarifas.Worker
+  BankMore.Pix.*       Domain / Application / Infrastructure / Api (Clean Arch)
+  BankMore.BacenSim    Simulador BACEN (DICT + SPI/ISO 20022 + mTLS)
 frontend/            Angular standalone
-pyflink/             auto_approver.py (Sprint 1) → fraud_detection_job.py (Sprint 2)
-ml/                  Treino e Flask (Sprint 3)
-scripts/e2e.sh       Validação automática do fluxo
-tests/               xUnit dos handlers
-docs/                Storyline de entrevista
+pyflink/             fraud_detector_job.py (PyFlink real, Avro consumer)
+ml/                  Treino XGBoost + Flask /predict
+scripts/             e2e.sh (transferência) + e2e-pix.sh (10 fluxos PIX) + bench.sh
+docs/adr/            19 ADRs (decisões de arquitetura)
 ```
 
 ## Fluxo end-to-end (validado pelo `make e2e`)
@@ -245,23 +311,25 @@ Três problemas em série tiveram que cair pra subir o job:
 | `pemja` falha em "Include folder should be at /opt/java/openjdk/include but doesn't exist" | imagem flink:1.18 tem só JRE, `pemja` compila contra JDK | `apt-get install openjdk-11-jdk-headless` + linkar `jni.h` no JRE |
 | `'InternalKeyedProcessFunctionContext' object has no attribute 'output'` | PyFlink 1.18 Python tem bug em side outputs com `KeyedProcessFunction` | `yield` no operator + `.filter()` downstream pra rotear |
 
-## O que ainda não está pronto (Sprint 4+)
+## O que ainda não está pronto (produção regulada)
 
-- ❌ Avro + Schema Registry — hoje JSON
-- ❌ Feature store (Redis + Postgres warm) — features `valor_medio_24h` e `valor_p95_30d` hoje são placeholders
-- ✅ Async I/O do PyFlink chamando o ML — endereçado por `parallelism=3` (Sprint 4.C). AsyncFunction nativo só Java em PyFlink 1.18.
-- ✅ Validação de saldo — Worker compensa com `SALDO_INSUFICIENTE` (Sprint 4.A)
-- ❌ PasswordHasher PBKDF2 (hoje SHA-256)
-- ❌ Validação de CPF com dígitos verificadores
-- ✅ Painel ops `/ops/fraude` no frontend — SSE em tempo real (Sprint 4.D)
-- ❌ Prometheus + Grafana + Jaeger (Sprint 5)
-- ❌ Auth role=ops no `/api/admin/fraude/stream` (hoje aberto na v1)
-- ❌ Frontend ainda fora do compose (rodar `cd frontend && ng serve` manual)
-- ❌ Outbox pattern para garantir atomicidade entre persistir e publicar
-- ❌ PyFlink submetido ao cluster JM/TM externo (hoje em local-mode dentro do container)
-- ❌ Shadow mode (2 modelos em paralelo, só um decide — A/B online)
+O que sobra exige homologação/infra de produção regulada, não código de demo —
+documentado com honestidade nos ADRs:
 
-Mapeado em [`CASE_TOP_PLAN.md`](CASE_TOP_PLAN.md).
+- ❌ **ICP-Brasil real** — hoje CA self-signed simula a cadeia; produção exige
+  certificado A1/A3 de AC credenciada + OCSP/CRL (ADR 0019)
+- ❌ **DICT persistente** — `bacen-sim` mantém o diretório em memória (perde no
+  restart; registro de chave é idempotente pra mitigar)
+- ❌ **Scheduler do PIX Automático com lock distribuído** — hoje single-replica;
+  produção usaria Quartz/Hangfire + advisory lock (ADR 0017)
+- ❌ **Retreino do modelo com dados PIX** — o XGBoost é agressivo com burst
+  (`count_1h >= ~6`), gerando falsos positivos pra PIX (ADR 0018)
+- ❌ **PyFlink submetido ao cluster JM/TM externo** — hoje local-mode no container
+- ❌ **Frontend do PIX** — a API está completa (Swagger), falta a UI
+
+Itens já entregues nas Sprints 1–10: Avro binário e2e, feature store Redis real,
+validação de saldo, Prometheus+Grafana, outbox+DLQ, auth admin, e todo o arranjo
+PIX com antifraude em 2 níveis e mTLS.
 
 ## Rodar local sem Docker (para dev/debug)
 
