@@ -35,6 +35,28 @@ cd "$(dirname "$0")"
 PFX_PASS="${PFX_PASS:-bankmore}"
 DAYS=3650
 
+# §7.1 (Manual Pix v6.0) — proibição de armazenar chave privada para fins históricos.
+# No rollover, a chave privada anterior é DESTRUÍDA (sobrescrita segura/shred), nunca
+# arquivada. Não há backup nem cópia histórica de .key/.pfx (ver .gitignore). Em
+# produção a destruição certificada seria feita por HSM/KMS/token A3.
+destroy_key() {
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    if command -v shred >/dev/null 2>&1; then
+      shred -u -z -n 3 "$f" 2>/dev/null || rm -f "$f"
+    else
+      rm -P "$f" 2>/dev/null || rm -f "$f"   # macOS/BSD: rm -P sobrescreve antes de remover
+    fi
+  done
+}
+destroy_key ca.key server.key client.key sign-pix-api.key sign-bacen-sim.key \
+            server.pfx client.pfx sign-pix-api.pfx sign-bacen-sim.pfx
+
+if [ "$PFX_PASS" = "bankmore" ]; then
+  echo "⚠ PFX_PASS usando o default de DEV ('bankmore'). Em produção defina PFX_PASS via" >&2
+  echo "  secret e guarde a chave privada em HSM/token A3 (Manual Pix v6.0 §7.1)." >&2
+fi
+
 echo "▶ Gerando CA (faz o papel da AC Raiz da ICP-Brasil)..."
 openssl genrsa -out ca.key 4096 2>/dev/null
 openssl req -x509 -new -nodes -key ca.key -sha256 -days $DAYS \
