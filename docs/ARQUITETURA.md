@@ -155,6 +155,11 @@ flowchart LR
 | **Dados** | postgres, redis | 5432 / 6379 |
 | **Observabilidade** | prometheus, grafana | 9090 / 3000 |
 
-**Segurança:** JWT (PBKDF2) · mTLS na RSFN (CA → bacen-sim/pix-api) · auth admin fail-closed.
+**Segurança:** JWT (PBKDF2) · auth admin fail-closed · **conformidade Manual Pix v6.0**:
+mTLS na RSFN com **certificados separados por finalidade** (CERTPIC de canal ≠ CERTPIA
+de assinatura XMLDSig das mensagens ISO 20022, §5.1) · **IP allowlist + auditoria de
+origem na ICOM**, isolada em rede dedicada `rsfn` (§2.1) · **destruição segura de chave
+no rollover** + keystore por menor privilégio (§7.1). Concessões de simulador (ICP-Brasil
+A1/A3, HSM, OCSP/CRL) em [ADR 0020](adr/0020-conformidade-manual-pix-v6.md).
 **Resiliência:** Outbox + DLQ · idempotência · fail-open no ML · checkpoint EXACTLY_ONCE.
-**Qualidade:** `make e2e` (7 cenários) + `make e2e-pix` (10 fluxos) · 19 ADRs.
+**Qualidade:** `make e2e` (7 cenários) + `make e2e-pix` (10 fluxos) · 20 ADRs.
