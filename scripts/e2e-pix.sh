@@ -85,6 +85,14 @@ RESOLVE=$(bacen_dict "/dict/entries/$BOB_CHAVE" | extract cpfTitular)
 test "$RESOLVE" = "$BOB_CPF" || fail "DICT não resolveu chave do Bob (veio '$RESOLVE')"
 ok "chaves registradas e resolvíveis no DICT (via mTLS na RSFN)"
 
+# §2.1 (Manual Pix v6.0) — controle de origem de acesso à ICOM ativo: a allowlist
+# tem que estar avaliando e liberando o PSP (métrica de acessos permitidos contando).
+if [ -n "$MTLS_ON" ]; then
+  PERM=$(curl -fsS http://127.0.0.1:5005/metrics 2>/dev/null | grep 'bacensim_icom_acessos_total{resultado="permitido"}' | awk '{print $2}' | cut -d. -f1)
+  { [ -n "$PERM" ] && [ "$PERM" -ge 1 ]; } 2>/dev/null || fail "§2.1: allowlist da ICOM não registrou acessos permitidos (veio '$PERM')"
+  ok "§2.1: IP allowlist da ICOM ativa e auditando origem ($PERM acessos permitidos)"
+fi
+
 # ----------------------------------------------------------------------
 echo; echo "▶ 2. Pagamento PIX por chave (Alice → Bob, R\$ 100)"
 SB_ANTES=$(saldo $BOB_TOKEN)
