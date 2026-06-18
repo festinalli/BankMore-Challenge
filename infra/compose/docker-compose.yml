@@ -212,6 +212,9 @@ services:
       MTLS_SERVER_PFX: /certs/server.pfx
       MTLS_CA_CRT: /certs/ca.crt
       MTLS_PFX_PASS: ${MTLS_PFX_PASS:-bankmore}
+      # §5.1 — assinatura de mensagem (CERTPIA do regulador), cert distinto do canal
+      MTLS_SIGN_PFX: /certs/sign-bacen-sim.pfx
+      PIX_SIGN_ENABLED: "true"
     volumes:
       # §7.1 / menor privilégio: monta SÓ o material que o bacen-sim usa —
       # seu CERTPIC de canal (server.pfx), seu CERTPIA de assinatura
@@ -251,6 +254,9 @@ services:
       MTLS_CLIENT_PFX: /certs/client.pfx
       MTLS_CA_CRT: /certs/ca.crt
       MTLS_PFX_PASS: ${MTLS_PFX_PASS:-bankmore}
+      # §5.1 — assinatura de mensagem (CERTPIA do PSP), cert distinto do canal mTLS
+      MTLS_SIGN_PFX: /certs/sign-pix-api.pfx
+      PIX_SIGN_ENABLED: "true"
       # Sprint 8.E — scheduler de recorrência do PIX Automático
       PixAutomatico__PollIntervalSeconds: "15"
       # Sprint 9 — antifraude inline (scoring síncrono antes da liquidação SPI)
