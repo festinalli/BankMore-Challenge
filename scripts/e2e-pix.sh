@@ -26,9 +26,13 @@ PSQL="docker exec -i bankmore-postgres psql -U bankmore -d bankmore_db -t -A"
 CERTS_DIR="$(cd "$(dirname "$0")/../infra/certs" 2>/dev/null && pwd || echo '')"
 if [ -n "$CERTS_DIR" ] && [ -f "$CERTS_DIR/client.crt" ]; then
   BACEN_BASE="https://localhost:5443"
+  MTLS_ON=1
   bacen_dict() { curl -fsS --cert "$CERTS_DIR/client.crt" --key "$CERTS_DIR/client.key" --cacert "$CERTS_DIR/ca.crt" "$BACEN_BASE$1"; }
+  # POST de uma pacs.008 crua no SPI via mTLS (pra testar enforcement de assinatura §5.1)
+  bacen_spi_pacs008() { curl -sS --cert "$CERTS_DIR/client.crt" --key "$CERTS_DIR/client.key" --cacert "$CERTS_DIR/ca.crt" -H "Content-Type: application/xml" --data-binary @- "$BACEN_BASE/spi/pacs008"; }
 else
   BACEN_BASE="http://localhost:5005"
+  MTLS_ON=
   bacen_dict() { curl -fsS "$BACEN_BASE$1"; }
 fi
 
@@ -101,6 +105,16 @@ ok "pagamento liquidado e2e=$E2E, Bob creditado (R\$ $SB_ANTES → R\$ $SB_DEPOI
 HAS_PACS=$($PSQL -c "SELECT pacs008_xml IS NOT NULL AND pacs002_xml IS NOT NULL FROM pix_pagamento WHERE id='$PGTO_ID';")
 test "$HAS_PACS" = "t" || fail "pacs.008/pacs.002 não persistidos"
 ok "mensagens ISO 20022 (pacs.008 + pacs.002) auditadas no banco"
+
+# §5.1 (Manual Pix v6.0) — ENFORCEMENT da assinatura de mensagem (CERTPIA). A cópia de
+# auditoria da pacs.008 no banco é NÃO-assinada; reenviada crua ao SPI, tem que ser
+# REJEITADA (RJCT) quando a assinatura está ativa — prova a separação CERTPIC≠CERTPIA.
+if [ -n "$MTLS_ON" ]; then
+  UNSIGNED=$($PSQL -c "SELECT pacs008_xml FROM pix_pagamento WHERE id='$PGTO_ID';")
+  RJ=$(printf '%s' "$UNSIGNED" | bacen_spi_pacs008 || true)
+  echo "$RJ" | grep -q "RJCT" || fail "SPI aceitou pacs.008 SEM assinatura — §5.1 não enforced: ${RJ:0:160}"
+  ok "§5.1 enforced: pacs.008 sem CERTPIA rejeitada pelo SPI (RJCT)"
+fi
 
 # ----------------------------------------------------------------------
 echo; echo "▶ 3. QR Code estático (Bob gera, Alice paga R\$ 50)"

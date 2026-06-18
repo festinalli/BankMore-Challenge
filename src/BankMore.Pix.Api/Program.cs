@@ -107,6 +107,23 @@ builder.Services.AddHttpClient<IDictClient, DictClient>(c => c.BaseAddress = new
 builder.Services.AddHttpClient<ISpiClient, SpiClient>(c => c.BaseAddress = new Uri(bacenUrl))
     .ConfigurePrimaryHttpMessageHandler(BuildBacenHandler);
 
+// Manual Pix v6.0 §5.1 — assinatura de mensagem (CERTPIA), com cert de finalidade
+// DISTINTA do cert de canal (CERTPIC/mTLS). O CERTPIA assina a pacs.008/004 e verifica
+// a pacs.002. Carregado de MTLS_SIGN_PFX, NUNCA do client.pfx de canal (não-cruzamento).
+var pixSignEnabled = (Environment.GetEnvironmentVariable("PIX_SIGN_ENABLED") ?? "false") == "true";
+System.Security.Cryptography.X509Certificates.X509Certificate2? certPia = null;
+System.Security.Cryptography.X509Certificates.X509Certificate2? caAssinatura = null;
+if (pixSignEnabled)
+{
+    var signPfx = Environment.GetEnvironmentVariable("MTLS_SIGN_PFX") ?? "/certs/sign-pix-api.pfx";
+    var signPass = Environment.GetEnvironmentVariable("MTLS_PFX_PASS") ?? "bankmore";
+    var caPath = Environment.GetEnvironmentVariable("MTLS_CA_CRT") ?? "/certs/ca.crt";
+    certPia = new System.Security.Cryptography.X509Certificates.X509Certificate2(signPfx, signPass);
+    caAssinatura = new System.Security.Cryptography.X509Certificates.X509Certificate2(caPath);
+}
+builder.Services.AddSingleton(new PacsAssinatura(certPia, caAssinatura));
+builder.Services.AddSingleton(new PixSignConfig(pixSignEnabled));
+
 // Sprint 9 — antifraude inline (scoring síncrono no fraud-ml antes da liquidação)
 var fraudeUrl = builder.Configuration["Fraude:Url"]
     ?? Environment.GetEnvironmentVariable("FRAUDE_ML_URL") ?? "http://fraud-ml:5003";

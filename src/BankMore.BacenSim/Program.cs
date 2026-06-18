@@ -63,6 +63,22 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<DictStore>();
 builder.Services.AddSingleton<SpiSettler>();
 
+// Manual Pix v6.0 §5.1 — assinatura de mensagem (CERTPIA). O regulador verifica a
+// assinatura da pacs.008/004 recebida do PSP e assina a pacs.002 de resposta, com um
+// cert de finalidade DISTINTA do cert de canal mTLS (server.pfx/CERTPIC).
+var pixSignEnabled = (Environment.GetEnvironmentVariable("PIX_SIGN_ENABLED") ?? "false") == "true";
+X509Certificate2? certPiaSim = null;
+X509Certificate2? caAssinatura = null;
+if (pixSignEnabled)
+{
+    var signPfx = Environment.GetEnvironmentVariable("MTLS_SIGN_PFX") ?? "/certs/sign-bacen-sim.pfx";
+    var signPass = Environment.GetEnvironmentVariable("MTLS_PFX_PASS") ?? "bankmore";
+    var caPath = Environment.GetEnvironmentVariable("MTLS_CA_CRT") ?? "/certs/ca.crt";
+    certPiaSim = new X509Certificate2(signPfx, signPass);
+    caAssinatura = new X509Certificate2(caPath);
+}
+var pacsAssinatura = new PacsAssinatura(certPiaSim, caAssinatura);
+
 var app = builder.Build();
 
 // Sprint 10.B — quando mTLS está ligado, DICT/SPI só respondem com client cert
@@ -93,6 +109,8 @@ app.MapMetrics("/metrics");
 
 var dictResolucoes = Metrics.CreateCounter("bacensim_dict_resolucoes_total", "Resoluções DICT", "resultado");
 var spiLiquidacoes = Metrics.CreateCounter("bacensim_spi_liquidacoes_total", "Liquidações SPI", "status");
+var spiAssinatura = Metrics.CreateCounter("bacensim_spi_assinatura_total",
+    "Verificações de assinatura de mensagem CERTPIA (Manual Pix v6.0 §5.1)", "resultado");
 
 app.MapGet("/health", () => Results.Ok(new { status = "UP", servico = "bacen-sim" }));
 
@@ -154,11 +172,24 @@ app.MapPost("/spi/pacs008", async (HttpRequest httpReq, SpiSettler spi, Cancella
     using var reader = new StreamReader(httpReq.Body);
     var pacs008 = await reader.ReadToEndAsync(ct);
 
+    // §5.1 — exige assinatura CERTPIA válida do PSP ANTES de liquidar. Sem assinatura
+    // (ou inválida/cert de canal), rejeita com RJCT e responde pacs.002 assinada.
+    if (pixSignEnabled && !pacsAssinatura.Verificar(pacs008))
+    {
+        spiAssinatura.WithLabels("pacs008_invalida").Inc();
+        spiLiquidacoes.WithLabels("RJCT_ASSINATURA").Inc();
+        var rjct = Iso20022Messages.BuildPacs002(
+            "SPI" + Guid.NewGuid().ToString("N")[..20], "", "", "RJCT", "FF01", DateTimeOffset.UtcNow);
+        return Results.Content(pacsAssinatura.Assinar(rjct), "application/xml");
+    }
+    if (pixSignEnabled) spiAssinatura.WithLabels("pacs008_valida").Inc();
+
     var result = await spi.LiquidarAsync(pacs008, ct);
     spiLiquidacoes.WithLabels(result.Status).Inc();
 
-    // Responde pacs.002 como application/xml (igual SPI real)
-    return Results.Content(result.Pacs002Xml, "application/xml");
+    // Responde pacs.002 como application/xml (igual SPI real), assinada com o CERTPIA do SPI.
+    var resposta = pixSignEnabled ? pacsAssinatura.Assinar(result.Pacs002Xml) : result.Pacs002Xml;
+    return Results.Content(resposta, "application/xml");
 });
 
 app.MapPost("/spi/pacs004", async (HttpRequest httpReq, ILogger<Program> log, CancellationToken ct) =>
@@ -167,12 +198,23 @@ app.MapPost("/spi/pacs004", async (HttpRequest httpReq, ILogger<Program> log, Ca
     var pacs004 = await reader.ReadToEndAsync(ct);
     log.LogInformation("SPI recebeu devolução pacs.004 ({Len} bytes)", pacs004.Length);
 
+    // §5.1 — a devolução também exige assinatura CERTPIA válida do PSP.
+    if (pixSignEnabled && !pacsAssinatura.Verificar(pacs004))
+    {
+        spiAssinatura.WithLabels("pacs004_invalida").Inc();
+        var rjct = Iso20022Messages.BuildPacs002(
+            "SPI" + Guid.NewGuid().ToString("N")[..20], "RTR", "DEVOLUCAO", "RJCT", "FF01", DateTimeOffset.UtcNow);
+        return Results.Content(pacsAssinatura.Assinar(rjct), "application/xml");
+    }
+    if (pixSignEnabled) spiAssinatura.WithLabels("pacs004_valida").Inc();
+
     // Liquidação da devolução: SPI aceita e move o valor de volta. Responde ACSC.
     await Task.Delay(Random.Shared.Next(50, 300), ct);
     var pacs002 = Iso20022Messages.BuildPacs002(
         "SPI" + Guid.NewGuid().ToString("N")[..20], "RTR", "DEVOLUCAO", "ACSC", null, DateTimeOffset.UtcNow);
     spiLiquidacoes.WithLabels("ACSC_DEVOLUCAO").Inc();
-    return Results.Content(pacs002, "application/xml");
+    var resposta = pixSignEnabled ? pacsAssinatura.Assinar(pacs002) : pacs002;
+    return Results.Content(resposta, "application/xml");
 });
 
 app.Run();
