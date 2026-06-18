@@ -4,12 +4,28 @@
 #
 # No PIX real, a comunicação PSP↔BACEN trafega na RSFN com mTLS, e os certificados
 # são emitidos pela ICP-Brasil (cadeia AC Raiz → AC intermediária → certificado do
-# PSP). Aqui criamos uma CA self-signed fazendo o papel da "AC Raiz", emitindo:
-#   - server cert pro bacen-sim (CN=bacen-sim, SAN DNS:bacen-sim)
-#   - client cert pro pix-api  (CN=pix-api, usado no handshake mTLS)
+# PSP). Aqui criamos uma CA self-signed fazendo o papel da "AC Raiz".
+#
+# SEPARAÇÃO DE CERTIFICADOS POR FINALIDADE (Manual de Segurança do Pix v6.0, §5.1):
+# o Manual proíbe usar o mesmo certificado para autenticar canal E assinar mensagem.
+# Emitimos DOIS pares por entidade, com finalidades exclusivas e não-intercambiáveis:
+#
+#   CERTPIC — autenticação de CANAL (mTLS na RSFN). EKU clientAuth/serverAuth.
+#     - server.pfx  → bacen-sim (CN=bacen-sim, SAN DNS:bacen-sim, serverAuth)
+#     - client.pfx  → pix-api   (CN=pix-api, clientAuth, apresentado no handshake)
+#
+#   CERTPIA — assinatura de MENSAGEM (XMLDSig nos pacs.008/002/004). keyUsage
+#     digitalSignature + nonRepudiation, SEM EKU de TLS (não pode autenticar canal).
+#     - sign-bacen-sim.pfx → bacen-sim assina a pacs.002
+#     - sign-pix-api.pfx   → pix-api assina a pacs.008/pacs.004
+#
+# Regra de não-cruzamento: o CERTPIC nunca assina mensagem e o CERTPIA nunca
+# autentica canal. Em produção seriam dois certs ICP-Brasil A1/A3 distintos, de uso
+# exclusivo no ecossistema Pix (sem reuso em SPB/MES).
 #
 # NÃO é ICP-Brasil real (que exige A1/A3 emitidos por AC credenciada). É a mesma
-# mecânica de mTLS: o servidor só aceita clientes cujo cert foi emitido pela CA.
+# mecânica de mTLS + assinatura: o servidor só aceita clientes cujo cert foi emitido
+# pela CA, e cada mensagem é assinada/verificada com o cert de finalidade correta.
 #
 # Saída: infra/certs/*.{crt,key,pfx}. As keys NÃO vão pro git (.gitignore).
 
@@ -46,13 +62,44 @@ EOF
   rm -f "$name.csr" "$name.ext"
 }
 
+# CERTPIA (Manual Pix v6.0 §5.1) — cert de ASSINATURA de mensagem, finalidade
+# distinta do cert de canal. keyUsage=digitalSignature,nonRepudiation marcado como
+# crítico e SEM extendedKeyUsage de TLS: por construção não serve pra autenticar
+# canal (mTLS), só pra assinar pacs. OU=Pix Signing deixa a finalidade explícita.
+gen_sign_cert() {
+  local name=$1 cn=$2
+  echo "▶ Gerando cert de ASSINATURA '$name' (CN=$cn, CERTPIA)..."
+  openssl genrsa -out "$name.key" 2048 2>/dev/null
+  openssl req -new -key "$name.key" \
+    -subj "/C=BR/O=BankMore/OU=Pix Signing/CN=$cn" -out "$name.csr" 2>/dev/null
+  cat > "$name.ext" <<EOF
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = critical, digitalSignature, nonRepudiation
+EOF
+  openssl x509 -req -in "$name.csr" -CA ca.crt -CAkey ca.key -CAcreateserial \
+    -out "$name.crt" -days $DAYS -sha256 -extfile "$name.ext" 2>/dev/null
+  openssl pkcs12 -export -out "$name.pfx" -inkey "$name.key" -in "$name.crt" \
+    -certfile ca.crt -passout "pass:$PFX_PASS" 2>/dev/null
+  rm -f "$name.csr" "$name.ext"
+}
+
+# --- CERTPIC: autenticação de canal (mTLS) ---
 # Server cert: serverAuth + SAN com o hostname do serviço no compose
 gen_cert server  bacen-sim "DNS:bacen-sim,DNS:localhost" serverAuth
 # Client cert: clientAuth (apresentado pelo pix-api no handshake)
 gen_cert client  pix-api   "DNS:pix-api"                 clientAuth
 
+# --- CERTPIA: assinatura de mensagem (XMLDSig), uma por entidade ---
+gen_sign_cert sign-pix-api   pix-api-sign
+gen_sign_cert sign-bacen-sim bacen-sim-sign
+
 rm -f ca.srl
 echo "✓ Certificados gerados em infra/certs/ (PFX pass: $PFX_PASS)"
-echo "  ca.crt        — CA (montada nos dois lados pra validar a cadeia)"
-echo "  server.pfx    — bacen-sim (HTTPS + exige client cert)"
-echo "  client.pfx    — pix-api (apresenta no mTLS)"
+echo "  ca.crt              — CA (montada nos dois lados pra validar a cadeia)"
+echo "  CERTPIC (canal/mTLS):"
+echo "    server.pfx        — bacen-sim (HTTPS + exige client cert)"
+echo "    client.pfx        — pix-api (apresenta no mTLS)"
+echo "  CERTPIA (assinatura de mensagem):"
+echo "    sign-bacen-sim.pfx — bacen-sim assina a pacs.002"
+echo "    sign-pix-api.pfx   — pix-api assina a pacs.008/pacs.004"

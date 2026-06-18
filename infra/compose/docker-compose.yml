@@ -213,7 +213,12 @@ services:
       MTLS_CA_CRT: /certs/ca.crt
       MTLS_PFX_PASS: ${MTLS_PFX_PASS:-bankmore}
     volumes:
-      - ../certs:/certs:ro
+      # §7.1 / menor privilégio: monta SÓ o material que o bacen-sim usa —
+      # seu CERTPIC de canal (server.pfx), seu CERTPIA de assinatura
+      # (sign-bacen-sim.pfx) e a CA pública. Não enxerga .key cru, pfx alheio nem ca.key.
+      - ../certs/ca.crt:/certs/ca.crt:ro
+      - ../certs/server.pfx:/certs/server.pfx:ro
+      - ../certs/sign-bacen-sim.pfx:/certs/sign-bacen-sim.pfx:ro
     restart: on-failure
     networks: [bankmore]
 
@@ -255,7 +260,12 @@ services:
       # Sprint 10.A — publica pix.liquidada pra análise pós-liquidação em streaming
       KAFKA_BROKER: kafka:29092
     volumes:
-      - ../certs:/certs:ro
+      # §7.1 / menor privilégio: monta SÓ o material que o pix-api usa —
+      # seu CERTPIC de canal (client.pfx), seu CERTPIA de assinatura
+      # (sign-pix-api.pfx) e a CA pública. Não enxerga .key cru, pfx alheio nem ca.key.
+      - ../certs/ca.crt:/certs/ca.crt:ro
+      - ../certs/client.pfx:/certs/client.pfx:ro
+      - ../certs/sign-pix-api.pfx:/certs/sign-pix-api.pfx:ro
     restart: on-failure
     networks: [bankmore]
 
