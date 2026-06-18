@@ -27,6 +27,16 @@ scrape_configs:
       - targets: ['fraud-ml:5003']
         labels: { service: fraud-ml, layer: ml }
 
+  # bacen-sim (ICOM/RSFN simulada). Expõe DICT/SPI + métricas de conformidade ao
+  # Manual Pix v6.0: bacensim_icom_acessos_total (§2.1), bacensim_spi_assinatura_total
+  # (§5.1), bacensim_spi_liquidacoes_total. O prometheus entra na rede rsfn pra
+  # alcançar o bacen-sim, que foi isolado da bankmore (§2.1).
+  - job_name: bacen-sim
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['bacen-sim:8080']
+        labels: { service: bacen-sim, layer: rsfn }
+
   # Sprint 5.A — fraud-detector via Flink PrometheusReporter nativo.
   # JAR /opt/flink/plugins/metrics-prometheus/flink-metrics-prometheus-1.18.1.jar
   # auto-carregado; reporter configurado via Configuration() no main() do job.

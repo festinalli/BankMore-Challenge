@@ -29,8 +29,8 @@ namespace BankMore.ContaCorrente.Application.Tests
         public async Task Handle_ValidCommand_ReturnsCadastrarContaResponse() 
         {
             // Arrange
-            var command = new CadastrarContaCommand("João Silva", "12345678900", "senha123", 100.00m);
-            _mockRepository.Setup(r => r.ObterPorCpf(command.Cpf)).ReturnsAsync((BankMore.ContaCorrente.Domain.Entities.ContaCorrente)null);
+            var command = new CadastrarContaCommand("João Silva", "12345678909", "senha123", 100.00m); // CPF válido (dígitos verificadores)
+            _mockRepository.Setup(r => r.ObterPorCpf(command.Cpf)).ReturnsAsync((BankMore.ContaCorrente.Domain.Entities.ContaCorrente?)null);
             _mockRepository.Setup(r => r.Cadastrar(It.IsAny<BankMore.ContaCorrente.Domain.Entities.ContaCorrente>())).ReturnsAsync(Guid.NewGuid().ToString());
             _mockRepository.Setup(r => r.AdicionarMovimento(It.IsAny<Movimento>())).Returns(Task.CompletedTask);
 
@@ -51,7 +51,7 @@ namespace BankMore.ContaCorrente.Application.Tests
         public async Task Handle_CpfAlreadyExists_ThrowsInvalidOperationException()
         {
             // Arrange
-            var command = new CadastrarContaCommand("João Silva", "12345678900", "senha123", 100.00m);
+            var command = new CadastrarContaCommand("João Silva", "12345678909", "senha123", 100.00m); // CPF válido (dígitos verificadores)
             _mockRepository.Setup(r => r.ObterPorCpf(command.Cpf)).ReturnsAsync(new BankMore.ContaCorrente.Domain.Entities.ContaCorrente { Cpf = command.Cpf });
 
             // Act & Assert

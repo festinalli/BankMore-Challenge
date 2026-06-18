@@ -204,18 +204,35 @@ services:
       dockerfile: src/BankMore.BacenSim/Dockerfile
     container_name: bankmore-bacen-sim
     ports:
-      - "5005:8080"   # HTTP: health + Swagger + /metrics (management)
-      - "5443:8443"   # HTTPS mTLS: DICT + SPI (RSFN)
+      # §2.1 — bind em loopback reduz a superfície de origem no host (a ICOM não fica
+      # exposta em 0.0.0.0). Em produção a RSFN é rede física/MPLS, não host:porta.
+      - "127.0.0.1:5005:8080"   # HTTP: health + Swagger + /metrics (management)
+      - "127.0.0.1:5443:8443"   # HTTPS mTLS: DICT + SPI (RSFN)
     environment:
       # Sprint 10.B — mTLS na RSFN. Desligue (MTLS_ENABLED=false) pra voltar a HTTP simples.
       MTLS_ENABLED: "true"
       MTLS_SERVER_PFX: /certs/server.pfx
       MTLS_CA_CRT: /certs/ca.crt
       MTLS_PFX_PASS: ${MTLS_PFX_PASS:-bankmore}
+      # §5.1 — assinatura de mensagem (CERTPIA do regulador), cert distinto do canal
+      MTLS_SIGN_PFX: /certs/sign-bacen-sim.pfx
+      PIX_SIGN_ENABLED: "true"
+      # §2.1 — controle de origem de acesso à ICOM (IP allowlist). Só o segmento da
+      # RSFN (172.30.0.0/16, onde o pix-api vive) + loopback. Em prod = IPs do ISPB
+      # homologado provisionados pelo BACEN.
+      ICOM_IP_ALLOWLIST_ENABLED: "true"
+      ICOM_IP_ALLOWLIST: "172.30.0.0/16,127.0.0.1/32"
     volumes:
-      - ../certs:/certs:ro
+      # §7.1 / menor privilégio: monta SÓ o material que o bacen-sim usa —
+      # seu CERTPIC de canal (server.pfx), seu CERTPIA de assinatura
+      # (sign-bacen-sim.pfx) e a CA pública. Não enxerga .key cru, pfx alheio nem ca.key.
+      - ../certs/ca.crt:/certs/ca.crt:ro
+      - ../certs/server.pfx:/certs/server.pfx:ro
+      - ../certs/sign-bacen-sim.pfx:/certs/sign-bacen-sim.pfx:ro
     restart: on-failure
-    networks: [bankmore]
+    # §2.1 — ICOM isolada numa rede dedicada (rsfn). postgres/kafka/redis/etc. NÃO
+    # alcançam o bacen-sim; só o pix-api (PSP) e o prometheus (scrape) entram na rsfn.
+    networks: [rsfn]
 
   pix-api:
     build:
@@ -246,6 +263,9 @@ services:
       MTLS_CLIENT_PFX: /certs/client.pfx
       MTLS_CA_CRT: /certs/ca.crt
       MTLS_PFX_PASS: ${MTLS_PFX_PASS:-bankmore}
+      # §5.1 — assinatura de mensagem (CERTPIA do PSP), cert distinto do canal mTLS
+      MTLS_SIGN_PFX: /certs/sign-pix-api.pfx
+      PIX_SIGN_ENABLED: "true"
       # Sprint 8.E — scheduler de recorrência do PIX Automático
       PixAutomatico__PollIntervalSeconds: "15"
       # Sprint 9 — antifraude inline (scoring síncrono antes da liquidação SPI)
@@ -255,9 +275,15 @@ services:
       # Sprint 10.A — publica pix.liquidada pra análise pós-liquidação em streaming
       KAFKA_BROKER: kafka:29092
     volumes:
-      - ../certs:/certs:ro
+      # §7.1 / menor privilégio: monta SÓ o material que o pix-api usa —
+      # seu CERTPIC de canal (client.pfx), seu CERTPIA de assinatura
+      # (sign-pix-api.pfx) e a CA pública. Não enxerga .key cru, pfx alheio nem ca.key.
+      - ../certs/ca.crt:/certs/ca.crt:ro
+      - ../certs/client.pfx:/certs/client.pfx:ro
+      - ../certs/sign-pix-api.pfx:/certs/sign-pix-api.pfx:ro
     restart: on-failure
-    networks: [bankmore]
+    # §2.1 — o PSP fala com a ICOM pela rede rsfn (além da bankmore pras suas deps)
+    networks: [bankmore, rsfn]
 
   contacorrente-api:
     build:
@@ -424,7 +450,8 @@ services:
     volumes:
       - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
-    networks: [bankmore]
+    # entra na rsfn pra scrapear o bacen-sim (ICOM), que saiu da bankmore (§2.1)
+    networks: [bankmore, rsfn]
 
   grafana:
     image: grafana/grafana:11.2.0
@@ -457,3 +484,10 @@ volumes:
 networks:
   bankmore:
     driver: bridge
+  # §2.1 — segmento de rede dedicado da RSFN (subnet fixa pra a IP allowlist ser
+  # determinística). Modela a rede segregada PSP↔BACEN; em prod seria MPLS/física.
+  rsfn:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
