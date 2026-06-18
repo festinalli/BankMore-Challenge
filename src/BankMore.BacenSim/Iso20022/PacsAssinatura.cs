@@ -93,7 +93,7 @@ public sealed class PacsAssinatura
         if (keyInfo is null) return null;
         foreach (var clause in keyInfo)
         {
-            if (clause is not KeyInfoX509Data x509) continue;
+            if (clause is not KeyInfoX509Data x509 || x509.Certificates is null) continue;
             foreach (var c in x509.Certificates)
                 if (c is X509Certificate2 cert) return cert;
         }
