@@ -56,7 +56,14 @@ $PSQL -c "DELETE FROM pix_pagamento WHERE cpf_origem IN ('$ALICE_CPF','$BOB_CPF'
 $PSQL -c "DELETE FROM pix_qrcode;" >/dev/null
 $PSQL -c "DELETE FROM pix_consentimento WHERE cpf_pagador IN ('$ALICE_CPF','$BOB_CPF');" >/dev/null
 $PSQL -c "DELETE FROM pix_nfc_token;" >/dev/null
-ok "estado PIX de teste resetado (count de burst zerado)"
+# O worker enriquece o feature store no Redis (count_1h, valores_24h/30d) a cada
+# liquidação. Sem limpar, execuções acumulam o histórico da Alice e o modelo
+# burst-aware passa a rejeitar pagamentos legítimos — quebra o determinismo do teste.
+for cpf in "$ALICE_CPF" "$BOB_CPF"; do
+  docker exec bankmore-redis redis-cli DEL \
+    "feat:$cpf:count_1h" "feat:$cpf:valores_24h" "feat:$cpf:valores_30d" >/dev/null 2>&1 || true
+done
+ok "estado PIX de teste resetado (Postgres + feature store Redis)"
 
 aliceh() { curl -fsS -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" "$@"; }
 bobh()   { curl -fsS -H "Authorization: Bearer $BOB_TOKEN"   -H "Content-Type: application/json" "$@"; }
