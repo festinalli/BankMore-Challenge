@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 
 interface FraudeEvento {
   evento: 'ALERTA' | 'REJEITADA';
@@ -24,7 +25,7 @@ interface FraudeEvento {
 @Component({
   selector: 'app-fraude-ops',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="ops-container">
@@ -36,6 +37,7 @@ interface FraudeEvento {
           </span>
         </div>
         <div class="navbar-menu">
+          <a routerLink="/ops/investigacao" style="color: #6ee7c0">Investigar casos</a>
           <label>
             <input type="checkbox" [checked]="filtroAlerta()" (change)="filtroAlerta.set(!!$any($event.target).checked)" /> Alertas
           </label>

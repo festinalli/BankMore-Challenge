@@ -1,0 +1,37 @@
+name: bankmore-intelligence
+services:
+  intelligence-db:
+    image: ${INTELLIGENCE_POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    environment:
+      POSTGRES_DB: intelligence
+      POSTGRES_USER: intelligence
+      POSTGRES_PASSWORD: ${INTELLIGENCE_DB_PASSWORD:?Configure INTELLIGENCE_DB_PASSWORD}
+    ports: ["127.0.0.1:5544:5432"]
+    volumes: ["intelligence_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intelligence -d intelligence"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  intelligence-api:
+    build: .
+    depends_on:
+      intelligence-db: {condition: service_healthy}
+    ports: ["127.0.0.1:5010:5010"]
+    environment:
+      INTELLIGENCE_DATABASE_URL: postgresql+psycopg://intelligence:${INTELLIGENCE_DB_PASSWORD}@intelligence-db:5432/intelligence
+      INTELLIGENCE_IDENTITIES: ${INTELLIGENCE_IDENTITIES:?Configure identidades}
+      INTELLIGENCE_PSEUDONYM_KEY: ${INTELLIGENCE_PSEUDONYM_KEY:?Configure chave}
+      INTELLIGENCE_MODE: ${INTELLIGENCE_MODE:-demo}
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen3:4b}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-embeddinggemma}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5010/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: on-failure
+volumes:
+  intelligence_data:

@@ -1,0 +1,72 @@
+<main>
+  <header>
+    <div><a routerLink="/ops/fraude">← Monitor de eventos</a><p class="eyebrow">BANKMORE / OPERAÇÕES</p><h1>Investigação de fraude</h1><p>Evidências, contexto e revisão humana em um só lugar.</p></div>
+    <span class="pill">Case de demonstração</span>
+  </header>
+  <section class="access" aria-label="Acesso à investigação">
+    @if (!identity()) {
+      <form (ngSubmit)="connect()">
+        <label for="credential">Credencial de investigação</label>
+        <div class="inline"><input id="credential" type="password" name="token" [(ngModel)]="token" autocomplete="off" required placeholder="Cole sua credencial" /><button [disabled]="busy() || !token">Conectar</button></div>
+        <small>A credencial permanece apenas na memória desta página.</small>
+      </form>
+    } @else {
+      <div class="inline"><span>Conectado como <strong>{{ identity()?.subject }}</strong></span><button class="secondary" (click)="refresh()" [disabled]="busy()">Atualizar fila</button><button class="secondary" (click)="disconnect()" [disabled]="busy()">Sair</button></div>
+    }
+  </section>
+  @if (error()) { <p class="error" role="alert">{{ error() }} Atualize o caso antes de tentar novamente.</p> }
+  @if (busy()) { <p role="status" class="pending">Processando… A análise pode levar alguns instantes.</p> }
+  @if (identity()) {
+    <div class="workspace">
+      <aside aria-label="Fila de casos">
+        <h2>Fila de investigação</h2>
+        @for (item of items(); track item.id) {
+          <button class="case" [class.active]="selected()?.id === item.id" [disabled]="busy()" (click)="select(item.id)">
+            <span class="case-top"><span class="pill">{{ item.status }}</span><small>{{ item.event.tipo }}</small></span>
+            <strong>{{ item.event.valor | currency:'BRL':'symbol':'1.2-2' }}</strong>
+            <span>{{ item.event.id }}</span>
+            <small>{{ item.created_at | date:'dd/MM HH:mm' }} · {{ item.event.synthetic ? 'Sintético' : 'Evento integrado' }}</small>
+          </button>
+        } @empty { <p class="muted">Nenhum caso nesta página. Novos alertas aparecerão após a ingestão.</p> }
+        <div class="inline"><button class="secondary" (click)="refresh(-20)" [disabled]="busy() || offset === 0">Anterior</button><button class="secondary" (click)="refresh(20)" [disabled]="busy() || items().length < 20">Próxima</button></div>
+      </aside>
+      <article>
+        @if (selected(); as item) {
+          <div class="inline spread"><div><p class="eyebrow">DOSSIÊ · VERSÃO {{ item.version }}</p><h2>{{ item.snapshot.event.id }}</h2></div><button (click)="analyze()" [disabled]="busy() || !can('draft') || item.status === 'ENCERRADO'">{{ item.reports.length ? 'Gerar novo parecer' : 'Investigar alerta' }}</button></div>
+          <p class="muted">Snapshot preservado da decisão em {{ item.snapshot.event.decididoEm | date:'dd/MM/yyyy HH:mm:ss' }}.</p>
+          <section class="facts">
+            <div><small>Valor · E1</small><strong>{{ item.snapshot.event.valor | currency:'BRL':'symbol':'1.2-2' }}</strong></div>
+            <div><small>Score do detector · E1</small><strong>{{ item.snapshot.event.scoreFraude ?? 'Não informado' }}</strong></div>
+            <div><small>Eventos anteriores / 24h · E2</small><strong>{{ item.snapshot.summary.previous_count_24h }}</strong></div>
+          </section>
+          <p>Modelo registrado: <code>{{ item.snapshot.event.modeloVersao }}</code></p>
+          <p>Motivos: {{ item.snapshot.event.motivos.join(', ') || 'Nenhum código informado' }}</p>
+          <p>Média anterior: {{ item.snapshot.summary.previous_mean_24h === null ? 'Indisponível' : (item.snapshot.summary.previous_mean_24h | currency:'BRL':'symbol':'1.2-2') }} · Total anterior: {{ item.snapshot.summary.previous_total_24h | currency:'BRL':'symbol':'1.2-2' }}</p>
+          <details><summary>Limitações das evidências</summary><ul>@for (text of item.snapshot.limitations; track text) { <li>{{ text }}</li> }</ul><small class="hash">Hash do snapshot: {{ item.snapshot_hash }}</small></details>
+          @if (item.reports[0]; as report) {
+            <section class="report">
+              <p class="eyebrow">PARECER PARA REVISÃO</p><h3>{{ report.content.proposal.recomendacao }}</h3>
+              <p class="mode">{{ report.content.generation.mode === 'demo-template' ? 'Demonstração por template — sem inferência de LLM' : report.content.generation.mode === 'degraded' ? 'IA indisponível — coleta de evidências recomendada' : 'Gerado com IA — hipóteses exigem validação' }}</p>
+              @for (hypothesis of report.content.proposal.hipoteses; track $index) { <p>{{ hypothesis.texto }} <span class="reference">{{ hypothesis.evidencias.join(' · ') }}</span></p> }
+              <ul>@for (text of report.content.proposal.limitacoes; track $index) { <li>{{ text }}</li> }</ul>
+              <small>{{ report.content.generation.model || 'Template v1' }} · {{ report.content.latency_ms }} ms · {{ report.content.retrieval.mode }}</small>
+            </section>
+            <h3>Procedimentos recuperados</h3>
+            @for (doc of report.content.retrieval.documents; track doc.id) {
+              <details><summary>{{ doc.title }} <span class="reference">{{ doc.id }}</span></summary><p>{{ doc.body }}</p><small>Vigência: {{ doc.valid_from | date:'dd/MM/yyyy' }} · {{ report.content.proposal.procedimentos.includes(doc.id) ? 'Citado no parecer' : 'Contexto recuperado' }}</small></details>
+            } @empty { <p>Nenhum procedimento recuperado para este contexto.</p> }
+            @if (can('review') && item.status !== 'ENCERRADO') {
+              <form class="review" (ngSubmit)="review()"><h3>Registrar revisão humana</h3><p>O registro encerra a investigação. Não executa ações sobre pagamentos.</p>
+                <label for="outcome">Desfecho</label><select id="outcome" name="outcome" [(ngModel)]="outcome"><option value="INCONCLUSIVO">Inconclusivo</option><option value="FALSO_POSITIVO">Falso positivo</option><option value="FRAUDE_CONFIRMADA">Fraude confirmada</option></select>
+                <label for="rationale">Justificativa e evidências verificadas</label><textarea id="rationale" name="rationale" [(ngModel)]="rationale" minlength="10" maxlength="1500" required rows="3"></textarea>
+                <button [disabled]="busy() || rationale.trim().length < 10">Registrar desfecho</button>
+              </form>
+            }
+          }
+          @for (review of item.reviews; track review.created_at) { <section class="review"><h3>{{ review.outcome }}</h3><p>{{ review.rationale }}</p><small>{{ review.subject }} · {{ review.created_at | date:'dd/MM HH:mm' }}</small></section> }
+          <h3>Trilha de investigação</h3><ol class="timeline">@for (entry of item.timeline; track entry.id) { <li><strong>{{ entry.action }}</strong><span>{{ entry.subject }} · {{ entry.created_at | date:'dd/MM HH:mm:ss' }}</span></li> }</ol>
+        } @else { <div class="empty"><h2>Selecione um caso para investigar</h2><p>Compare os fatos do detector com o contexto disponível e registre uma decisão fundamentada.</p></div> }
+      </article>
+    </div>
+  }
+</main>

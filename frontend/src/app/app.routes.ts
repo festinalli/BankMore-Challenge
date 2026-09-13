@@ -37,6 +37,10 @@ export const routes: Routes = [
     canActivate: [AuthGuard]
   },
   {
+    path: 'ops/investigacao',
+    loadComponent: () => import('./features/ops/investigation.component').then(m => m.InvestigationComponent)
+  },
+  {
     path: 'ops/fraude',
     component: FraudeOpsComponent
   },

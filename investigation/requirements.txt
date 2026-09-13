@@ -1,0 +1,11 @@
+fastapi==0.141.1
+uvicorn==0.52.4
+httpx==0.28.1
+pydantic==2.13.5
+sqlalchemy==2.0.52
+psycopg[binary]==3.3.5
+pgvector==0.5.0
+confluent-kafka==2.15.1
+mcp==1.30.0
+pytest==9.1.1
+python-dotenv==1.2.3

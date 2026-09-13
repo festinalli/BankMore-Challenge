@@ -1,0 +1,26 @@
+[
+  {
+    "id": "DEMO-BURST-v1",
+    "queue": "operacoes",
+    "title": "Procedimento de demonstração: burst e pagamentos sequenciais",
+    "body": "Pagamentos sequenciais, concentração de transferências e códigos BURST justificam investigação. Compare valores e frequência com o histórico disponível. Um score alto ou rejeição não confirma fraude. Registre as evidências, solicite contexto adicional por canal autorizado e encaminhe para revisão humana. Este procedimento é fictício, exclusivo do case; não é norma bancária oficial.",
+    "valid_from": "2026-01-01T00:00:00+00:00",
+    "valid_to": null
+  },
+  {
+    "id": "DEMO-CONTEXTO-v1",
+    "queue": "operacoes",
+    "title": "Procedimento de demonstração: contexto e possível falso positivo",
+    "body": "Uma transferência com valor compatível com movimentações anteriores pode ter contexto legítimo. Isso não demonstra autorização pelo cliente nem descarta tomada de conta. Para possível falso positivo, compare histórico, finalidade e confirmação independente. Apenas o analista registra o desfecho após revisão. Nunca libere pagamento com base apenas na explicação do assistente. Procedimento fictício do case.",
+    "valid_from": "2026-01-01T00:00:00+00:00",
+    "valid_to": null
+  },
+  {
+    "id": "DEMO-LACUNAS-v1",
+    "queue": "operacoes",
+    "title": "Procedimento de demonstração: evidências insuficientes",
+    "body": "Na ausência de histórico, score, versão ou contexto de autenticação, declare evidências insuficientes. Histórico vazio na projeção não prova ausência de movimentação bancária. Registre a cobertura limitada e recomende coletar evidências. Não invente dispositivo, geolocalização, destinatários relacionados ou explicações do modelo. Procedimento fictício do case.",
+    "valid_from": "2026-01-01T00:00:00+00:00",
+    "valid_to": null
+  }
+]

@@ -1,0 +1,27 @@
+# Compose alongside compose.yml. Kafka is private to this test network (no host ports).
+services:
+  intelligence-kafka:
+    build:
+      context: ./docker
+      dockerfile: kafka-test.Dockerfile
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+  intelligence-integration-test:
+    image: bankmore-intelligence-intelligence-api
+    profiles: [test]
+    environment:
+      INTELLIGENCE_DATABASE_URL: postgresql+psycopg://intelligence:${INTELLIGENCE_DB_PASSWORD}@intelligence-db:5432/intelligence
+      INTELLIGENCE_IDENTITIES: ${INTELLIGENCE_IDENTITIES:?Configure identidades}
+      INTELLIGENCE_PSEUDONYM_KEY: ${INTELLIGENCE_PSEUDONYM_KEY:?Configure chave}
+      INTELLIGENCE_MODE: demo
+      PYTHONPATH: /app
+      KAFKA_BROKERS: intelligence-kafka:9092
+    depends_on:
+      intelligence-db: {condition: service_healthy}
+      intelligence-kafka: {condition: service_healthy}
+    volumes:
+      - ./scripts:/checks:ro
+    command: ["python", "/checks/check_kafka.py"]

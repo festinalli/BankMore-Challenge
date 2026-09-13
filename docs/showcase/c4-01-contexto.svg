@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7890ae"/></marker></defs>
+<rect width="100%" height="100%" fill="#0b1220"/>
+<text x="70" y="65" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="700" fill="#6ee7c0" text-anchor="start" letter-spacing="3">BANKMORE / FRAUD INTELLIGENCE</text>
+<text x="1530" y="65" font-family="Segoe UI,Arial,sans-serif" font-size="20" font-weight="400" fill="#a7b8ce" text-anchor="end" letter-spacing="0">C4 / NÍVEL 1</text>
+<text x="70" y="125" font-family="Segoe UI,Arial,sans-serif" font-size="47" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Da detecção à investigação</text>
+<text x="70" y="168" font-family="Segoe UI,Arial,sans-serif" font-size="23" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Contexto do sistema • quem interage e quais responsabilidades ficam separadas</text>
+<rect x="620" y="235" width="390" height="170" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="644" y="273" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">PESSOA</text>
+<text x="644" y="313" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Analista de fraude</text>
+<text x="644" y="351" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Confere evidências e registra</text>
+<text x="644" y="381" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">o desfecho da investigação.</text>
+<rect x="70" y="235" width="390" height="195" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="94" y="273" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">SISTEMA EXTERNO</text>
+<text x="94" y="313" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Cliente de IA</text>
+<text x="94" y="351" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Solicita consultas e pareceres</text>
+<text x="94" y="381" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">usando as ferramentas MCP.</text>
+<rect x="70" y="565" width="390" height="210" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="94" y="603" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">SISTEMA EXTERNO</text>
+<text x="94" y="643" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Plataforma bancária</text>
+<text x="94" y="681" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Serviços .NET e detector</text>
+<text x="94" y="711" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">PyFlink / XGBoost publicam</text>
+<text x="94" y="741" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">eventos de transferências.</text>
+<rect x="580" y="520" width="450" height="295" rx="18" fill="#123432" stroke="#6ee7c0" stroke-width="2"/>
+<text x="604" y="558" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#6ee7c0" text-anchor="start" letter-spacing="1">SISTEMA DE SOFTWARE</text>
+<text x="604" y="598" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Fraud Intelligence</text>
+<text x="604" y="636" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Preserva evidências do alerta.</text>
+<text x="604" y="666" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Recupera procedimentos (RAG).</text>
+<text x="604" y="696" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Gera hipóteses para revisão.</text>
+<text x="604" y="726" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Registra pareceres e desfechos.</text>
+<rect x="1170" y="565" width="360" height="210" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="1194" y="603" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">SISTEMA EXTERNO</text>
+<text x="1194" y="643" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Ollama local</text>
+<text x="1194" y="681" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Executa o modelo de linguagem</text>
+<text x="1194" y="711" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">e o modelo de embeddings.</text>
+<text x="1194" y="741" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Sem ferramentas financeiras.</text>
+<polyline points="815,405 815,520" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="720.5" y="429" width="189.0" height="52" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="815" y="449" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">Investiga e revisa</text>
+<text x="815" y="474" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">Painel web</text>
+<polyline points="460,332 510,332 510,590 580,590" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="473.75" y="458" width="122.5" height="27" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="535" y="478" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">MCP / stdio</text>
+<polyline points="460,674 580,674" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="468.25" y="616" width="103.5" height="52" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="520" y="636" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">Eventos</text>
+<text x="520" y="661" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">via Kafka</text>
+<polyline points="1030,674 1170,674" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="1043.5" y="574" width="113.0" height="77" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="1100" y="594" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">Geração +</text>
+<text x="1100" y="619" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">embeddings</text>
+<text x="1100" y="644" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">HTTP</text>
+<rect x="70" y="900" width="1460" height="185" rx="18" fill="#101e2e" stroke="#334961" stroke-width="2"/>
+<text x="100" y="943" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#6ee7c0" text-anchor="start" letter-spacing="1">RESPONSABILIDADES QUE O CASE TORNA VISÍVEIS</text>
+<text x="100" y="983" font-family="Segoe UI,Arial,sans-serif" font-size="25" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Detecção existente</text>
+<text x="100" y="1018" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Produz o alerta e o score.</text>
+<text x="100" y="1047" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Permanece no sistema bancário.</text>
+<text x="580" y="983" font-family="Segoe UI,Arial,sans-serif" font-size="25" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Investigação assistida</text>
+<text x="580" y="1018" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Organiza contexto e hipóteses.</text>
+<text x="580" y="1047" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">A IA pode sinalizar lacunas.</text>
+<text x="1060" y="983" font-family="Segoe UI,Arial,sans-serif" font-size="25" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Revisão humana</text>
+<text x="1060" y="1018" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Registra o desfecho do caso.</text>
+<text x="1060" y="1047" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Nenhuma ação sobre pagamentos.</text>
+<path d="M 70 1130 H 1530" stroke="#334961"/>
+<text x="70" y="1167" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Demonstração com eventos e procedimentos sintéticos • sem medição de eficácia antifraude</text>
+<text x="1530" y="1167" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="400" fill="#6ee7c0" text-anchor="end" letter-spacing="0">CASE DE ENGENHARIA • SET 2026</text>
+</svg>

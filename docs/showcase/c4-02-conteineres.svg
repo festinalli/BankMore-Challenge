@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1840" height="1640" viewBox="0 0 1840 1640">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7890ae"/></marker></defs>
+<rect width="100%" height="100%" fill="#0b1220"/>
+<text x="70" y="65" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="700" fill="#6ee7c0" text-anchor="start" letter-spacing="3">BANKMORE / FRAUD INTELLIGENCE</text>
+<text x="1770" y="65" font-family="Segoe UI,Arial,sans-serif" font-size="20" font-weight="400" fill="#a7b8ce" text-anchor="end" letter-spacing="0">C4 / NÍVEL 2</text>
+<text x="70" y="125" font-family="Segoe UI,Arial,sans-serif" font-size="47" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Como o sistema funciona por dentro</text>
+<text x="70" y="168" font-family="Segoe UI,Arial,sans-serif" font-size="23" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Contêineres C4 = aplicações e serviços executáveis; não necessariamente contêineres Docker</text>
+<rect x="60" y="435" width="1240" height="960" rx="22" fill="#0e1929" stroke="#46607c" stroke-width="2" stroke-dasharray="10 8"/>
+<text x="90" y="473" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#6ee7c0" text-anchor="start" letter-spacing="1">LIMITE DO SISTEMA / BANKMORE FRAUD INTELLIGENCE</text>
+<rect x="140" y="225" width="340" height="155" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="164" y="263" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">PESSOA</text>
+<text x="164" y="303" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Analista</text>
+<text x="164" y="341" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Consulta e revisa casos.</text>
+<rect x="810" y="225" width="380" height="155" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="834" y="263" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">SISTEMA EXTERNO</text>
+<text x="834" y="303" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Cliente de IA</text>
+<text x="834" y="341" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Invoca ferramentas MCP.</text>
+<rect x="1410" y="225" width="360" height="165" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="1434" y="263" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">SISTEMA EXTERNO</text>
+<text x="1434" y="303" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Plataforma bancária</text>
+<text x="1434" y="341" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">.NET + PyFlink / XGBoost</text>
+<rect x="100" y="535" width="420" height="185" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="124" y="573" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">CONTÊINER · ANGULAR</text>
+<text x="124" y="613" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Painel de investigação</text>
+<text x="124" y="651" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Exibe fatos, fontes e pareceres.</text>
+<text x="124" y="681" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Permite registrar revisão.</text>
+<rect x="770" y="535" width="420" height="185" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="794" y="573" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">CONTÊINER · PYTHON / FASTMCP</text>
+<text x="794" y="613" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Adaptador MCP</text>
+<text x="794" y="651" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Seis ferramentas por stdio.</text>
+<text x="794" y="681" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Credencial read / draft.</text>
+<rect x="410" y="840" width="480" height="245" rx="18" fill="#123432" stroke="#6ee7c0" stroke-width="2"/>
+<text x="434" y="878" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#6ee7c0" text-anchor="start" letter-spacing="1">CONTÊINER · PYTHON / FASTAPI</text>
+<text x="434" y="918" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">API de investigação</text>
+<text x="434" y="956" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Autoriza por escopo e fila.</text>
+<text x="434" y="986" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Orquestra sequência fixa de RAG.</text>
+<text x="434" y="1016" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Valida schema e referências.</text>
+<text x="434" y="1046" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Registra versões e auditoria.</text>
+<rect x="100" y="1175" width="420" height="180" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="124" y="1213" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">CONTÊINER · PYTHON</text>
+<text x="124" y="1253" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Consumidor de eventos</text>
+<text x="124" y="1291" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Deduplicação e quarentena.</text>
+<text x="124" y="1321" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Confirma offset após persistir.</text>
+<rect x="770" y="1175" width="420" height="180" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="794" y="1213" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">CONTÊINER · POSTGRESQL / PGVECTOR</text>
+<text x="794" y="1253" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Banco da investigação</text>
+<text x="794" y="1291" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Casos, snapshots e auditoria.</text>
+<text x="794" y="1321" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Procedimentos e embeddings.</text>
+<rect x="1410" y="535" width="360" height="185" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="1434" y="573" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">CONTÊINER EXTERNO</text>
+<text x="1434" y="613" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Apache Kafka</text>
+<text x="1434" y="651" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Eventos JSON de transferências</text>
+<text x="1434" y="681" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">e alertas do detector.</text>
+<rect x="1410" y="850" width="360" height="235" rx="18" fill="#142237" stroke="#334961" stroke-width="2"/>
+<text x="1434" y="888" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600" fill="#a7b8ce" text-anchor="start" letter-spacing="1">SISTEMA EXTERNO LOCAL</text>
+<text x="1434" y="928" font-family="Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" fill="#edf3fc" text-anchor="start" letter-spacing="0">Ollama</text>
+<text x="1434" y="966" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">LLM: qwen3:4b</text>
+<text x="1434" y="996" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Embeddings: nomic-embed-text</text>
+<text x="1434" y="1026" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">Retorna vetores e proposta.</text>
+<polyline points="310,380 310,535" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="244.0" y="397" width="132.0" height="27" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="310" y="417" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">Usa o painel</text>
+<polyline points="1000,380 1000,535" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="938.75" y="397" width="122.5" height="27" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="1000" y="417" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">MCP / stdio</text>
+<polyline points="1590,390 1590,535" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="1509.75" y="445" width="160.5" height="27" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="1590" y="465" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">Publica eventos</text>
+<polyline points="310,720 310,786 530,786 530,840" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="133.25" y="749" width="217.5" height="52" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="242" y="769" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">HTTP / JSON</text>
+<text x="242" y="794" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">read · draft · review</text>
+<polyline points="980,720 980,786 780,786 780,840" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="1014.0" y="749" width="132.0" height="52" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="1080" y="769" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">HTTP / JSON</text>
+<text x="1080" y="794" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">read · draft</text>
+<polyline points="890,962 1410,962" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="1046.0" y="893" width="208.0" height="52" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="1150" y="913" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">HTTP</text>
+<text x="1150" y="938" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">Embeddings + geração</text>
+<polyline points="780,1085 780,1125 980,1125 980,1175" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="971.75" y="1081" width="236.5" height="27" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="1090" y="1101" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">SQL • leitura e escrita</text>
+<polyline points="520,1265 770,1265" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="579.0" y="1198" width="132.0" height="52" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="645" y="1218" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">SQL</text>
+<text x="645" y="1243" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">Persistência</text>
+<polyline points="1590,720 1805,720 1805,1440 310,1440 310,1355" fill="none" stroke="#7890ae" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="619.75" y="1452" width="540.5" height="27" rx="4" fill="#0b1220" stroke="#0b1220" stroke-width="2"/>
+<text x="890" y="1472" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="middle" letter-spacing="0">Consome eventos JSON • commit após persistência durável</text>
+<text x="90" y="1530" font-family="Segoe UI,Arial,sans-serif" font-size="20" font-weight="400" fill="#edf3fc" text-anchor="start" letter-spacing="0">AMBIENTE GRAVADO: Angular + API + SQLite + Ollama. Kafka/PostgreSQL foram validados em execução separada.</text>
+<text x="90" y="1562" font-family="Segoe UI,Arial,sans-serif" font-size="20" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">RAG: ranking lexical + vetorial (RRF), com filtro de fila e vigência. Documentos do case são fictícios.</text>
+<path d="M 70 1570 H 1770" stroke="#334961"/>
+<text x="70" y="1607" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="400" fill="#a7b8ce" text-anchor="start" letter-spacing="0">O adaptador MCP usa a mesma API do painel • sem execução livre de ferramentas pelo LLM</text>
+<text x="1770" y="1607" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="400" fill="#6ee7c0" text-anchor="end" letter-spacing="0">CASE DE ENGENHARIA • SET 2026</text>
+</svg>
