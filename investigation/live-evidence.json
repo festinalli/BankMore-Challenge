@@ -1,0 +1,42 @@
+{
+  "status": "passed",
+  "environment": "isolated local simulation with fictitious accounts",
+  "transport": "JSON",
+  "normal_transaction": {
+    "id": "d03e5f72-9972-4527-89b4-8491cd7c825d",
+    "status": "EFETIVADA",
+    "reason": null,
+    "score": null,
+    "model": null,
+    "movements": 3
+  },
+  "flagged_transaction": {
+    "id": "ac526069-7b10-4134-bf32-69bbf93fdb69",
+    "status": "REJEITADA",
+    "reason": "ML_SCORE_0.988",
+    "score": 0.9875,
+    "model": "rules-v1+xgboost-v1",
+    "movements": 0
+  },
+  "case_id": "1ccc5e1fb3cc01a488220696c89f1d01ef63f68a96755b3600c297ebfc6b8674",
+  "mcp_tools": [
+    "buscar_casos_revisados",
+    "buscar_procedimentos",
+    "listar_alertas",
+    "obter_evidencias_caso",
+    "obter_resumo_comportamental",
+    "registrar_parecer"
+  ],
+  "report_id": "0655ede9323b4dd4937cf249684a132a",
+  "generation": {
+    "mode": "ollama",
+    "model": "qwen3:4b",
+    "prompt_version": "investigation-v2",
+    "input_tokens": 1586,
+    "output_tokens": 304
+  },
+  "retrieval_mode": "hybrid-rrf",
+  "recommendation": "COLETAR_EVIDENCIAS",
+  "latency_ms": 4692,
+  "assistant_review_http_status": 403
+}

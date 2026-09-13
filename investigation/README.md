@@ -1,5 +1,7 @@
 # BankMore Fraud Intelligence — MVP
 
+**Fluxo integrado validado:** [transferência .NET → Kafka → PyFlink/XGBoost → PostgreSQL → MCP → Ollama](LIVE_VALIDATION.md), incluindo controle efetivado e rejeição sem débito. O ambiente é local, com contas fictícias e score calculado em execução.
+
 Investigação assistida sobre **transferências**, fora do fluxo de liquidação. O consumidor recebe eventos do detector, persiste um dossiê e o analista (ou cliente MCP) solicita a análise. O parecer reúne fatos estruturados, procedimentos versionados e hipóteses; a revisão humana encerra o caso. Nenhuma ferramenta altera pagamentos, regras de risco ou o ledger.
 
 ## Executar a demonstração local (Windows / PowerShell)

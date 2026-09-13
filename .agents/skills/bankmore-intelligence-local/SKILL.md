@@ -1,6 +1,6 @@
 ---
 name: bankmore-intelligence-local
-description: Use when starting or validating the BankMore Fraud Intelligence MVP locally on Windows, including Python environment recovery, API and Angular startup, and MCP protocol tests. Captures the verified SQLite demo workflow and sandbox permission failures; does not certify PostgreSQL or LLM quality.
+description: Use when starting or validating BankMore Fraud Intelligence locally on Windows, including the SQLite demo, isolated transfer-to-detector-to-MCP integration, Docker/runtime recovery, and API/Angular startup. Captures verified integration procedures, not production fraud efficacy or LLM quality.
 ---
 
 # BankMore Intelligence local workflow
@@ -88,3 +88,56 @@ database and uses a private Kafka network; no banking ledger is involved.
 Passing evidence: Kafka delivery, PostgreSQL snapshots, duplicate handling, durable
 offsets, malformed/conflicting event quarantine, restart, authenticated report API,
 and assistant review denied with HTTP 403. Stop only the test broker afterward.
+
+## Verified transfer → detector → MCP workflow
+
+**Failure pattern:** Docker Hub layer EOFs plus incompatible PyFlink/Beam runtime
+dependencies can prevent a real detector from running even though the investigation
+unit and protocol tests pass.
+
+**Verified by:** `investigation/scripts/check_live_mcp.py` passed against isolated
+`bankmore-live`: actual .NET API/outbox, Kafka, PyFlink/XGBoost, banking worker,
+PostgreSQL/pgvector, six MCP tools and Ollama. Control transfer was settled; the
+ML-rejected transfer had zero ledger movements; assistant review returned 403.
+See `investigation/LIVE_VALIDATION.md` and `live-evidence.json` for the bounded result.
+
+1. Use `investigation/compose.live.yml` for this specific integration, not the
+   previous `compose.integration.yml` consumer-only test. Secrets remain in ignored
+   `investigation/.env.local`; never print or copy their values into documentation.
+2. Identify the process bound to port 5010 before stopping it. An earlier native
+   `python -m bankmore_intelligence serve` may occupy the port. The live API replaces
+   it at the same port; the SQLite database is preserved. Never stop unrelated apps.
+3. Build/start with `docker compose --env-file investigation/.env.local -f
+   investigation/compose.live.yml up -d --build --wait`. Use the documented pgvector
+   fallback image override if the default pull fails. This stack has separate banks,
+   volumes, network and loopback account/transfer ports 5100/5101.
+4. Run `index-knowledge` inside `intelligence-api`; do not run `seed-demo`. The live
+   runner creates fresh fictitious accounts through HTTP and receives detector
+   events, rather than publishing pre-decided alerts itself.
+5. Verify ML logs show a Redis connection. The ML app initializes that connection
+   at startup; if Redis was initially unavailable, restart only this test ML service
+   after correcting Redis, then verify before interpreting the integration result.
+6. Run `.venv/Scripts/python.exe investigation/scripts/check_live_mcp.py`. A passing
+   result requires real Ollama output and persisted MCP report, plus correct ledger
+   outcomes. Inspect the source before running: it creates new local test accounts.
+7. The existing Angular page at `/ops/investigacao` and the documented stdio MCP
+   config now point to the integrated API. Refresh the queue after the API switch.
+
+### Ruled-out approaches
+
+- Repeated pulls of official Flink/Redis images hit Docker Hub layer EOFs. The local
+  fallback builds actual project code on an available Microsoft SDK base.
+- Debian's Python 3.11 could not install pemja 0.3.0 build dependencies (NumPy
+  1.21.4). The passing PyFlink environment uses managed Python 3.10.19 via uv.
+- New setuptools removed `pkg_resources`, needed by Apache Beam in PyFlink 1.18.
+  Pinning setuptools 80.9.0 fixed startup. Java 17 support here is experimental;
+  do not present this validation runtime as a production recommendation.
+- Redis packaged by apt enabled protected mode and rejected peer containers. The
+  isolated compose config permits its private peers without publishing a host port.
+- FastMCP's unstructured list result is one text block per item, including zero
+  blocks for an empty list. Do not unconditionally read `content[0]` for list tools.
+
+This test uses JSON transport and the project's synthetically trained XGBoost.
+It does not validate Avro, the PIX/DICT/SPI flow, real customer data, fraud labels,
+or semantic correctness of the model's hypotheses. The original GIF predates this
+integration; do not silently describe that recording as the newly validated flow.

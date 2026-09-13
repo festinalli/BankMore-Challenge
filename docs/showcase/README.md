@@ -1,5 +1,7 @@
 # BankMore Fraud Intelligence — demonstração e C4
 
+**Evolução posterior à gravação:** [fluxo integrado com score calculado pelo detector, PostgreSQL e seis ferramentas MCP](../../investigation/LIVE_VALIDATION.md). A prévia abaixo registra a primeira demo com casos pré-carregados.
+
 O módulo transforma alertas de transferências em casos com evidências preservadas, contexto documental e pareceres para revisão. O painel e o adaptador MCP usam a mesma API autenticada. A IA não executa ações financeiras.
 
 ## Aplicação em execução

@@ -1,0 +1,135 @@
+# Isolated local transfer -> detector -> MCP integration. No external bank endpoints.
+name: bankmore-live
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: bankmore_live
+      POSTGRES_USER: bankmore
+      POSTGRES_PASSWORD: ${INTELLIGENCE_DB_PASSWORD:?Configure local secrets}
+    volumes:
+      - bank_data:/var/lib/postgresql/data
+      - ../infra/db/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U bankmore -d bankmore_live]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  intelligence-db:
+    image: ${INTELLIGENCE_POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    environment:
+      POSTGRES_DB: intelligence
+      POSTGRES_USER: intelligence
+      POSTGRES_PASSWORD: ${INTELLIGENCE_DB_PASSWORD}
+    volumes: [intelligence_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U intelligence -d intelligence]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  intelligence-kafka:
+    image: bankmore-intelligence-intelligence-kafka
+    build: {context: ./docker, dockerfile: kafka-test.Dockerfile}
+    healthcheck:
+      test: [CMD-SHELL, /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+  kafka-init:
+    image: bankmore-intelligence-intelligence-kafka
+    depends_on:
+      intelligence-kafka: {condition: service_healthy}
+    entrypoint: [sh, -c]
+    command:
+      - 'for topic in transferencia.solicitada transferencia.aprovada transferencia.rejeitada fraude.alerta pix.liquidada; do /opt/kafka/bin/kafka-topics.sh --bootstrap-server intelligence-kafka:9092 --create --if-not-exists --topic $$topic --partitions 3 --replication-factor 1 || exit 1; done'
+  redis:
+    build: {context: .., dockerfile: investigation/docker/live-runtime.Dockerfile, target: redis}
+    # Private test network only; Redis has no published host port.
+    command: [redis-server, --save, '', --appendonly, 'no', --dir, /tmp, --protected-mode, 'no']
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  contacorrente-api:
+    build: {context: .., dockerfile: src/BankMore.ContaCorrente.Api/Dockerfile}
+    environment: &bank-env
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=bankmore_live;Username=bankmore;Password=${INTELLIGENCE_DB_PASSWORD}
+      JWT_KEY: ${INTELLIGENCE_PSEUDONYM_KEY:?Configure local secrets}
+      Kafka__Broker: intelligence-kafka:9092
+      Redis__Connection: redis:6379
+      Outbox__AvroTopics: ""
+      Outbox__PollIntervalMs: "500"
+    ports: [127.0.0.1:5100:8080]
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+  transferencia-api:
+    build: {context: .., dockerfile: src/BankMore.Transferencia.Api/Dockerfile}
+    environment: *bank-env
+    ports: [127.0.0.1:5101:8080]
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+  tarifas-worker:
+    build: {context: .., dockerfile: src/BankMore.Tarifas.Worker/Dockerfile}
+    environment: *bank-env
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+    restart: on-failure
+  fraud-ml:
+    build: {context: .., dockerfile: investigation/docker/live-runtime.Dockerfile, target: ml}
+    environment: {ML_THRESHOLD: '0', REDIS_HOST: redis}
+    depends_on:
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, curl, -fsS, http://localhost:5003/health]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  fraud-detector:
+    build: {context: .., dockerfile: investigation/docker/live-runtime.Dockerfile, target: flink}
+    environment:
+      KAFKA_BROKERS: intelligence-kafka:9092
+      GROUP_ID: bankmore-live-detector
+      ML_SERVICE_URL: http://fraud-ml:5003
+      ML_REJEITAR_THRESHOLD: '0.95'
+      BURST_LIMITE_POR_MINUTO: '4'
+      CHECKPOINT_INTERVAL_MS: '10000'
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+      fraud-ml: {condition: service_healthy}
+    restart: on-failure
+  intelligence-api:
+    build: .
+    environment: &investigation-env
+      INTELLIGENCE_DATABASE_URL: postgresql+psycopg://intelligence:${INTELLIGENCE_DB_PASSWORD}@intelligence-db:5432/intelligence
+      INTELLIGENCE_IDENTITIES: ${INTELLIGENCE_IDENTITIES:?Configure local identities}
+      INTELLIGENCE_PSEUDONYM_KEY: ${INTELLIGENCE_PSEUDONYM_KEY}
+      INTELLIGENCE_MODE: ollama
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen3:4b}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-embeddinggemma}
+      KAFKA_BROKERS: intelligence-kafka:9092
+    extra_hosts: [host.docker.internal:host-gateway]
+    ports: [127.0.0.1:5010:5010]
+    depends_on:
+      intelligence-db: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://localhost:5010/health", timeout=2)']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  intelligence-consumer:
+    build: .
+    environment: *investigation-env
+    command: [python, -m, bankmore_intelligence.consumer]
+    depends_on:
+      intelligence-db: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+    restart: on-failure
+volumes:
+  bank_data:
+  intelligence_data:

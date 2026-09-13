@@ -1,5 +1,7 @@
 # Validação local — 13/09/2026
 
+**Validação posterior:** o fluxo de transferências .NET → Kafka → PyFlink/XGBoost → PostgreSQL → MCP/Ollama também passou. Veja [resultados e reprodução](LIVE_VALIDATION.md). As seções abaixo preservam o escopo das verificações iniciais.
+
 Branch: `codex/fraud-intelligence-mvp`.
 
 | Verificação | Resultado |

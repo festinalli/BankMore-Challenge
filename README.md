@@ -5,6 +5,8 @@ MVP isolado do pagamento, com demonstração sintética e integração opcional 
 
 [Demonstração e diagramas C4](docs/showcase/README.md) · [Validação do MVP](investigation/VALIDATION.md) · [Servidor MCP](investigation/bankmore_intelligence/mcp_server.py)
 
+**Integração completa de transferências:** [APIs .NET → detector real PyFlink/XGBoost → MCP com Ollama](investigation/LIVE_VALIDATION.md), validada com contas fictícias em ambiente isolado.
+
 ![.NET 8](https://img.shields.io/badge/.NET%208-512BD4?logo=dotnet&logoColor=white)
 ![Angular](https://img.shields.io/badge/Angular-DD0031?logo=angular&logoColor=white)
 ![PyFlink 1.18](https://img.shields.io/badge/PyFlink%201.18-E6526F?logo=apacheflink&logoColor=white)
