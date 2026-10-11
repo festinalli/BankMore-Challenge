@@ -6,7 +6,7 @@ PSQL    := docker exec -i bankmore-postgres psql -U bankmore -d bankmore_db
 
 .PHONY: help env up down ps logs reset psql topics seed \
         run-contacorrente run-transferencia run-worker run-approver \
-        build test e2e pyflink-deps register-schemas
+        build test e2e pyflink-deps register-schemas jev-demo jev-api jev-test
 
 help:
 	@echo "BankMore — targets:"
@@ -30,6 +30,10 @@ help:
 	@echo ""
 	@echo "  make build              dotnet build da solution"
 	@echo "  make test               dotnet test"
+	@echo ""
+	@echo "  make jev-demo           Antifraude Pix com o Jev (exige TYPESAFE_API_KEY)"
+	@echo "  make jev-api            API da tela /ops/jev (exige TYPESAFE_API_KEY)"
+	@echo "  make jev-test           Testes do módulo jev/"
 
 env:
 	@test -f .env || cp .env.example .env
@@ -117,3 +121,16 @@ build:
 
 test:
 	$(DOTNET) test BankMoreSolution.sln
+
+# ---------------------------------------------------------------------
+# Antifraude Pix com o Jev (ADR 0022). jev-demo exige TYPESAFE_API_KEY no
+# ambiente (só na sessão do terminal); sem chave: cd jev && python3 -m bankmore_jev --offline
+# ---------------------------------------------------------------------
+jev-demo:
+	cd jev && python3 -m bankmore_jev
+
+jev-api:
+	cd jev && python3 -m bankmore_jev --api
+
+jev-test:
+	cd jev && python3 -m unittest discover -s tests -t .

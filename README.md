@@ -1,5 +1,7 @@
 # BankMore — Real-Time Fraud Detection + PIX
 
+**Novo:** [Antifraude Pix com o Jev — o XGBoost lê os números, o Jev lê o contexto, o código decide](jev/README.md), com tela em `/ops/jev` ([ADR 0022](docs/adr/0022-jev-segunda-camada-antifraude-pix.md)).
+
 **Novo módulo:** [Fraud Intelligence — investigação com MCP, RAG e revisão humana](investigation/README.md).
 MVP isolado do pagamento, com demonstração sintética e integração opcional ao Kafka de transferências.
 
@@ -26,7 +28,7 @@ antes de ser efetivada. Todo PIX passa por **antifraude em dois níveis**: scori
 streaming** que enriquece o feature store (observa). Arquitetura limpa (Clean
 Architecture + CQRS + DDD) em 3 bounded contexts: ContaCorrente, Transferência e PIX.
 
-> **Sprints 1–10 done.** Changelog resumido abaixo; decisões em `docs/adr/` (0001–0019).
+> **Sprints 1–10 done.** Changelog resumido abaixo; decisões em `docs/adr/` (0001–0022).
 > Validação: `make e2e` (7 cenários de transferência) + `make e2e-pix` (**10 fluxos PIX**).
 
 <details>
@@ -237,8 +239,10 @@ src/                 Solução .NET — ContaCorrente, Transferencia, Pix, Bacen
 frontend/            Angular standalone
 pyflink/             fraud_detector_job.py (PyFlink real, Avro consumer)
 ml/                  Treino XGBoost + Flask /predict
+investigation/       Investigação de fraude com MCP, RAG e revisão humana (ADR 0021)
+jev/                 Antifraude Pix com o Jev, segunda camada depois do XGBoost (ADR 0022)
 scripts/             e2e.sh (transferência) + e2e-pix.sh (10 fluxos PIX) + bench.sh
-docs/adr/            19 ADRs (decisões de arquitetura)
+docs/adr/            22 ADRs (decisões de arquitetura)
 ```
 
 ## Fluxo end-to-end (validado pelo `make e2e`)
