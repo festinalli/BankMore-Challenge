@@ -1,0 +1,21 @@
+/* Pix personalizado e todos os cenários (separado do jev.component.css pelo budget de 8 kB por arquivo) */
+.formulario textarea#motivo{font-size:16px}
+.exemplos{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0}
+.grade{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.opcoes{display:flex;gap:24px;margin:16px 0 4px;font-size:14px}
+.aviso{display:block;margin-top:10px;color:var(--confirmar)}
+
+.tabela{margin-top:14px}
+/* minmax(0, …): cada linha é uma grade própria; sem isso o conteúdo alarga as colunas e elas desalinham */
+.linha{display:grid;grid-template-columns:32px minmax(0,1.8fr) 70px minmax(0,1.2fr) minmax(0,1.4fr) minmax(0,1.4fr) 52px;gap:10px;align-items:center;padding:10px 8px;border-bottom:1px solid var(--borda);font-size:14px}
+.linha.cabecalho{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#a0aec3}
+.linha.pendente{display:block;color:var(--acento)}
+.metricas{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0 10px}
+.metricas div{background:var(--fundo);border:1px solid var(--borda);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.metricas strong{font-size:30px}
+.metricas strong span{font-size:16px;color:#a0aec3;font-weight:500}
+.metricas .destaque{border-color:var(--acento);background:#193536}
+.nota{font-size:12px;color:#a0aec3;margin:0 0 4px}
+@media(max-width:1100px){.grade,.metricas{grid-template-columns:1fr 1fr}}
+@media(max-width:950px){.tabela{overflow-x:auto;scrollbar-color:#334155 transparent}.linha{min-width:640px}}
+@media(max-width:500px){.grade,.metricas{grid-template-columns:1fr}}

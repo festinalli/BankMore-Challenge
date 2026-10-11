@@ -1,0 +1,219 @@
+<main>
+  <header>
+    <div>
+      <a routerLink="/ops/fraude">← Monitor de eventos</a>
+      <p class="eyebrow">BANKMORE / OPERAÇÕES / ANTIFRAUDE PIX</p>
+      <h1>Jev · segunda camada do antifraude</h1>
+      <p class="lema">O XGBoost lê os números, o Jev lê o contexto, <strong>o código decide</strong>.</p>
+    </div>
+    <div class="status">
+      @if (status(); as s) {
+        @if (s.modo === 'ao_vivo') {
+          <span class="pill ao-vivo">● Jev ao vivo · {{ s.modelo }}</span>
+        } @else {
+          <span class="pill simulado">○ Respostas simuladas</span>
+        }
+        <small>XGBoost: {{ s.xgboost }}</small>
+      } @else {
+        <span class="pill fora">○ API desconectada</span>
+        <button class="secondary" (click)="conectar()">Tentar de novo</button>
+      }
+    </div>
+  </header>
+
+  @if (erro()) { <p class="error" role="alert">{{ erro() }}</p> }
+
+  <div class="workspace">
+    <aside aria-label="Pix para analisar">
+      <h2>Pix para analisar</h2>
+      @for (c of cenarios(); track c.id) {
+        <button class="cenario" [class.ativo]="selecionado() === c.id" [disabled]="ocupado()" (click)="escolher(c.id)">
+          <span class="topo"><span class="tag" [class]="'tag ' + c.categoria">{{ rotuloCategoria(c.categoria) }}</span><small>#{{ c.id }}</small></span>
+          <strong>{{ c.titulo }}</strong>
+          <small>{{ c.pix.valor | currency:'BRL':'symbol':'1.2-2' }} · {{ c.pix.hora_local }}h</small>
+        </button>
+      }
+      <button class="cenario personalizado" [class.ativo]="selecionado() === 'personalizado'" [disabled]="ocupado() || !status()" (click)="escolher('personalizado')">
+        <span class="topo">@if (status()?.modo === 'ao_vivo') {<span class="tag livre">Ao vivo</span>}</span>
+        <strong>Pix personalizado</strong>
+        <small>Escreva o motivo e veja o Jev decidir</small>
+      </button>
+      <button id="rodar-todos" class="lote" [disabled]="ocupado() || !cenarios().length" (click)="rodarTodos()">▶ Rodar os {{ cenarios().length }} cenários</button>
+    </aside>
+
+    <article aria-live="polite">
+      @if (emLote()) {
+        <p class="eyebrow">TODOS OS CENÁRIOS</p>
+        <h2>XGBoost sozinho × XGBoost + Jev</h2>
+        <div class="tabela" role="table" aria-label="Resultados por cenário">
+          <div class="linha cabecalho" role="row">
+            <span role="columnheader">#</span><span role="columnheader">Cenário</span><span role="columnheader">XGBoost</span>
+            <span role="columnheader">Só XGBoost</span><span role="columnheader">Leitura do Jev</span><span role="columnheader">Com Jev</span><span role="columnheader">ms</span>
+          </div>
+          @for (r of lote(); track r.cenario?.id) {
+            <div class="linha entra" role="row">
+              <span role="cell">{{ r.cenario?.id }}</span>
+              <span role="cell"><strong>{{ r.cenario?.titulo }}</strong> <span class="tag" [class]="'tag ' + r.cenario?.categoria">{{ rotuloCategoria(r.cenario!.categoria) }}</span></span>
+              <span role="cell">{{ r.score_xgboost === null ? '—' : (r.score_xgboost | number:'1.2-2') }}</span>
+              <span role="cell"><span class="acao pequena" [class]="'acao pequena ' + classeAcao(r.so_xgboost)">{{ rotuloAcao(r.so_xgboost) }}</span></span>
+              <span role="cell">{{ r.jev ? rotuloGolpe(r.jev.golpe) + ' · ' + porcento(r.jev.confianca) + '%' : 'indisponível' }}</span>
+              <span role="cell"><span class="acao pequena" [class]="'acao pequena ' + classeAcao(r.decisao)">{{ rotuloAcao(r.decisao) }}</span></span>
+              <span role="cell">{{ r.jev && !r.simulado ? (r.jev.latencia_ms | number:'1.0-0') : '—' }}</span>
+            </div>
+          }
+          @if (ocupado()) { <div class="linha pendente" role="row"><span role="cell">Consultando o Jev…</span></div> }
+        </div>
+        @if (lote().length) {
+          <section class="metricas">
+            <div><small>Golpes que o XGBoost aprovaria</small><strong>{{ resumo().passariam }}<span>/{{ resumo().golpes }}</span></strong></div>
+            <div class="destaque"><small>Desses, o Jev reteve ou pediu confirmação</small><strong>{{ resumo().segurados }}<span>/{{ resumo().passariam }}</span></strong></div>
+            <div><small>Legítimos com atrito a mais</small><strong>{{ resumo().atrito }}<span>/{{ resumo().legitimos }}</span></strong></div>
+            <div><small>Latência mediana do Jev</small><strong>{{ resumo().mediana === null ? '—' : (resumo().mediana | number:'1.0-0') }}<span> ms</span></strong></div>
+          </section>
+          <p class="nota">Cenários sintéticos{{ status()?.xgboost === 'score de exemplo' ? ', com score do XGBoost de exemplo' : '' }}: mostram o fluxo, não a eficácia.</p>
+          @if (!ocupado()) {
+            <p class="muted">O Jev mudou a decisão em {{ resumo().mudou }} de {{ lote().length }} Pix, sempre para mais cautela.
+              @if (resumo().falhas) { Em {{ resumo().falhas }} chamada(s) o Jev falhou e valeu a decisão do XGBoost. }
+              @if (status()?.modo === 'simulado') { <strong>Respostas simuladas: rode a API sem --offline para números reais.</strong> }
+            </p>
+          }
+        }
+      } @else if (selecionado() === 'personalizado') {
+        <p class="eyebrow">PIX PERSONALIZADO</p>
+        <h2>Escreva o motivo como o cliente escreveria</h2>
+        <form class="formulario" (ngSubmit)="avaliar()">
+          <label for="motivo">Motivo informado pelo cliente</label>
+          <textarea id="motivo" name="motivo" rows="4" maxlength="2000" [(ngModel)]="personalizado.motivo_informado" placeholder="Ex.: meu filho trocou de número e pediu para pagar um boleto urgente"></textarea>
+          <div class="exemplos">
+            <small>Exemplos:</small>
+            @for (e of exemplos; track e.titulo) { <button type="button" class="secondary chip" (click)="usarExemplo(e)" [disabled]="ocupado()">{{ e.titulo }}</button> }
+          </div>
+          <div class="grade">
+            <div><label for="valor">Valor (R$)</label><input id="valor" name="valor" type="number" min="0.01" step="0.01" [(ngModel)]="personalizado.valor" required /></div>
+            <div><label for="hora">Hora</label><select id="hora" name="hora" [(ngModel)]="personalizado.hora_local">@for (h of horas; track h) { <option [ngValue]="h">{{ h }}h</option> }</select></div>
+            <div><label for="habitual">Valor habitual do cliente (R$)</label><input id="habitual" name="habitual" type="number" min="0" step="0.01" [(ngModel)]="personalizado.valor_habitual" /></div>
+            <div><label for="idade">Chave do destinatário criada há (dias)</label><input id="idade" name="idade" type="number" min="0" step="1" [(ngModel)]="personalizado.chave_destino_idade_dias" /></div>
+          </div>
+          <div class="opcoes">
+            <label class="check"><input type="checkbox" name="primeiro" [(ngModel)]="personalizado.primeiro_pix_para_destino" /> Primeiro Pix para este destinatário</label>
+            <label class="check"><input type="checkbox" name="aparelho" [(ngModel)]="personalizado.dispositivo_novo" /> Aparelho novo</label>
+          </div>
+          <label for="historico">Histórico do cliente (gerado pelo banco)</label>
+          <textarea id="historico" name="historico" rows="2" maxlength="2000" [(ngModel)]="personalizado.historico"></textarea>
+          <label for="score">Score do XGBoost para este Pix (exemplo): <strong>{{ personalizado.score_xgboost | number:'1.2-2' }}</strong></label>
+          <input id="score" name="score" type="range" min="0" max="1" step="0.01" [(ngModel)]="personalizado.score_xgboost" />
+          <button id="avaliar" [disabled]="ocupado() || !personalizado.valor">{{ ocupado() ? 'Consultando o Jev…' : 'Avaliar com o Jev' }}</button>
+          @if (status()?.modo === 'simulado') { <small class="aviso">No modo simulado não há resposta do Jev para Pix personalizado: suba a API com a chave.</small> }
+        </form>
+      } @else if (cenarioAtual(); as c) {
+        <div class="inline spread">
+          <div><p class="eyebrow">CENÁRIO {{ c.id }} · {{ rotuloCategoria(c.categoria).toUpperCase() }}</p><h2>{{ c.titulo }}</h2></div>
+          <button id="avaliar" (click)="avaliar()" [disabled]="ocupado() || !status()">{{ ocupado() ? 'Consultando o Jev…' : 'Avaliar com o Jev' }}</button>
+        </div>
+        <section class="pix">
+          <div class="valor"><small>Pix de</small><strong>{{ c.pix.valor | currency:'BRL':'symbol':'1.2-2' }}</strong></div>
+          <ul class="fatos">
+            <li>{{ c.pix.hora_local }}h</li>
+            <li [class.alerta]="c.pix.primeiro_pix_para_destino">{{ c.pix.primeiro_pix_para_destino ? 'Primeiro Pix para este destinatário' : 'Destinatário conhecido' }}</li>
+            <li [class.alerta]="c.pix.chave_destino_idade_dias < 7">Chave criada há {{ c.pix.chave_destino_idade_dias }} {{ c.pix.chave_destino_idade_dias === 1 ? 'dia' : 'dias' }}</li>
+            <li [class.alerta]="c.pix.dispositivo_novo">{{ c.pix.dispositivo_novo ? 'Aparelho novo' : 'Aparelho habitual' }}</li>
+            <li>Habitual: {{ c.pix.valor_habitual | currency:'BRL':'symbol':'1.0-0' }}</li>
+          </ul>
+          <p class="balao"><small>Motivo informado pelo cliente</small>{{ c.pix.motivo_informado || '(não informado)' }}</p>
+          <p class="historico"><small>Histórico do cliente</small>{{ c.pix.historico }}</p>
+        </section>
+      } @else {
+        <div class="empty"><h2>Escolha um Pix</h2><p>Compare a decisão do XGBoost sozinho com a decisão das duas camadas.</p></div>
+      }
+
+      @if (!emLote() && resultado(); as r) {
+        <section class="pipeline" aria-label="Decisão em três etapas">
+          <div class="etapa" [class.visivel]="etapa() >= 1">
+            <p class="eyebrow">1 · XGBOOST · NÚMEROS</p>
+            <strong class="numero">{{ r.score_xgboost === null ? '—' : (r.score_xgboost | number:'1.2-2') }}</strong>
+            <small>score de fraude ({{ r.fonte_score }})</small>
+            <span class="acao" [class]="'acao ' + classeAcao(r.so_xgboost)">{{ rotuloAcao(r.so_xgboost) }}</span>
+          </div>
+          <div class="seta" aria-hidden="true">→</div>
+          <div class="etapa" [class.visivel]="etapa() >= 2">
+            <p class="eyebrow">2 · JEV · CONTEXTO</p>
+            @if (r.jev && !r.jev.golpe) {
+              <strong class="numero apagado">Resposta incompleta</strong>
+              <small>só os sinais de terceiro vieram · {{ r.jev.latencia_ms | number:'1.0-0' }} ms</small>
+            } @else if (r.jev; as j) {
+              <strong class="numero">{{ rotuloGolpe(j.golpe) }}</strong>
+              <div class="medidor" [attr.aria-label]="'Confiança ' + porcento(j.confianca) + '%'">
+                <div class="preenchido" [style.width.%]="porcento(j.confianca)"></div>
+                <i style="left:60%"></i><i style="left:85%"></i>
+              </div>
+              <small>confiança {{ porcento(j.confianca) }}% · {{ r.simulado ? 'simulado' : (j.latencia_ms | number:'1.0-0') + ' ms' }}</small>
+            } @else {
+              <strong class="numero apagado">Sem resposta</strong>
+              <small>{{ r.erro_jev }}</small>
+            }
+          </div>
+          <div class="seta" aria-hidden="true">→</div>
+          <div class="etapa" [class.visivel]="etapa() >= 3">
+            <p class="eyebrow">3 · POLÍTICA · CÓDIGO</p>
+            <span class="acao grande" [class]="'acao grande ' + classeAcao(r.decisao)">{{ rotuloAcao(r.decisao) }}</span>
+            <small>{{ r.decisao === r.so_xgboost ? 'Mesma decisão do XGBoost' : 'O Jev aumentou a cautela' }}</small>
+          </div>
+        </section>
+
+        @if (etapa() >= 3) {
+          <section class="detalhes entra">
+            <div class="motivos">
+              @for (m of r.motivos; track m) { <span class="motivo">{{ rotuloMotivo(m) }}</span> } @empty { <span class="motivo">Nenhum motivo de alerta</span> }
+            </div>
+            @if (r.jev; as j) {
+              <div class="colunas">
+                <div>
+                  <h3>Qual golpe parece ser</h3>
+                  @if (!j.golpe) {
+                    <small class="muted">A pergunta de golpe não veio na resposta; valem só os sinais.</small>
+                  } @else if (temProbabilidades(j)) {
+                    @for (o of opcoes; track o) {
+                      <div class="barra" [class.escolhida]="o === j.golpe">
+                        <span>{{ rotuloGolpe(o) }}</span>
+                        <div class="trilho"><div class="preenchido" [style.width.%]="porcento(j.probabilidades[o])"></div></div>
+                        <b>{{ porcento(j.probabilidades[o]) }}%</b>
+                      </div>
+                    }
+                  } @else {
+                    <div class="barra escolhida">
+                      <span>{{ rotuloGolpe(j.golpe) }}</span>
+                      <div class="trilho"><div class="preenchido" [style.width.%]="porcento(j.confianca)"></div></div>
+                      <b>{{ porcento(j.confianca) }}%</b>
+                    </div>
+                    @if (r.simulado) { <small class="muted">Probabilidade de cada opção só com o Jev ao vivo.</small> }
+                  }
+                </div>
+                <div>
+                  <h3>Sinais de terceiro</h3>
+                  @for (s of sinais; track s) {
+                    <div class="barra" [class.escolhida]="(j.sinais[s] ?? 0) >= 0.8">
+                      <span>{{ rotuloSinal(s) }}</span>
+                      <div class="trilho"><div class="preenchido" [style.width.%]="porcento(j.sinais[s])"></div><i style="left:80%"></i></div>
+                      <b>{{ porcento(j.sinais[s]) }}%</b>
+                    </div>
+                  }
+                  <small class="muted">Linha: limiar de 80%. Na confiança: abaixo de 60%, dúvida; a partir de 85%, reter (se for golpe).</small>
+                </div>
+              </div>
+            }
+            <div class="enviado">
+              <h3>{{ r.simulado ? 'O que seria enviado ao Jev' : 'O que saiu do banco' }} <small>(estado do Jev)</small></h3>
+              <ul class="campos">
+                @for (campo of camposPagamento(r.estado_enviado); track campo[0]) { <li><small>{{ rotuloCampo(campo[0]) }}</small>{{ campo[1] }}</li> }
+              </ul>
+              <p class="balao"><small>Motivo, mascarado</small>@for (t of trechos(r.estado_enviado.motivo_informado_pelo_cliente); track $index) {@if (t.mascara) {<mark>{{ t.texto }}</mark>} @else {<span>{{ t.texto }}</span>}}</p>
+              <p class="muted">Os campos estruturados não têm CPF, nome nem chave Pix, e o valor vai em faixa. No texto livre, CPF, CNPJ, telefone, e-mail, chave aleatória e conta viram marcadores; nomes próprios não são detectados.</p>
+              <button class="secondary" type="button" (click)="verJson.set(!verJson())">{{ verJson() ? 'Esconder JSON' : 'Ver JSON enviado' }}</button>
+              @if (verJson()) { <pre>{{ json(r.estado_enviado) }}</pre> }
+            </div>
+          </section>
+        }
+      }
+    </article>
+  </div>
+</main>

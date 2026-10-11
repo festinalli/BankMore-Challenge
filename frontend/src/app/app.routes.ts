@@ -41,6 +41,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/ops/investigation.component').then(m => m.InvestigationComponent)
   },
   {
+    path: 'ops/jev',
+    title: 'Antifraude Pix com Jev · BankMore',
+    loadComponent: () => import('./features/ops/jev.component').then(m => m.JevComponent)
+  },
+  {
     path: 'ops/fraude',
     component: FraudeOpsComponent
   },

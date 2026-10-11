@@ -1,6 +1,6 @@
 # BankMore — Real-Time Fraud Detection + PIX
 
-**Novo:** [Antifraude Pix com o Jev — o XGBoost lê os números, o Jev lê o contexto, o código decide](jev/README.md) ([ADR 0022](docs/adr/0022-jev-segunda-camada-antifraude-pix.md)).
+**Novo:** [Antifraude Pix com o Jev — o XGBoost lê os números, o Jev lê o contexto, o código decide](jev/README.md), com tela em `/ops/jev` ([ADR 0022](docs/adr/0022-jev-segunda-camada-antifraude-pix.md)).
 
 **Novo módulo:** [Fraud Intelligence — investigação com MCP, RAG e revisão humana](investigation/README.md).
 MVP isolado do pagamento, com demonstração sintética e integração opcional ao Kafka de transferências.

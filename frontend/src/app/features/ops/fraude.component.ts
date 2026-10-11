@@ -38,6 +38,7 @@ interface FraudeEvento {
         </div>
         <div class="navbar-menu">
           <a routerLink="/ops/investigacao" style="color: #6ee7c0">Investigar casos</a>
+          <a routerLink="/ops/jev" style="color: #6ee7c0">Antifraude com Jev</a>
           <label>
             <input type="checkbox" [checked]="filtroAlerta()" (change)="filtroAlerta.set(!!$any($event.target).checked)" /> Alertas
           </label>

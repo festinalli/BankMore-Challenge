@@ -4,7 +4,7 @@
 
 O antifraude inline do Pix ([ADR 0018](../docs/adr/0018-sprint9-antifraude-inline-pix.md)) usa um XGBoost com features numéricas: valor, hora, dia da semana, quantidade de Pix na última hora, valores habituais. Ele é bom no que é anomalia de número. Golpes de engenharia social, como o do falso parente, muitas vezes não são: o valor é normal, o horário é normal e a cliente é a dona da conta. Parte do sinal está no destinatário (primeiro Pix, chave recém-criada), que o XGBoost atual não usa. O resto está no contexto: "meu filho trocou de número e pediu para pagar um boleto urgente".
 
-Este módulo põe o [Jev](https://docs.typesafe.ai/) (TypeSafe AI) como **segunda camada** depois do XGBoost. O Jev é um modelo de decisão: devolve escolhas tipadas com probabilidade e confiança e não gera texto. É um módulo Python à parte. A integração no fluxo .NET está desenhada no [ADR 0022](../docs/adr/0022-jev-segunda-camada-antifraude-pix.md), mas ainda não foi implementada. A ideia veio do vídeo do Sandeco ["JEV+RUST: Detectando fraudes no Pix em tempo real!"](https://www.youtube.com/watch?v=avQAz9norY8).
+Este módulo põe o [Jev](https://docs.typesafe.ai/) (TypeSafe AI) como **segunda camada** depois do XGBoost. O Jev é um modelo de decisão: devolve escolhas tipadas com probabilidade e confiança e não gera texto. É um módulo Python à parte, com uma tela no frontend (`/ops/jev`, veja abaixo). A integração no fluxo .NET está desenhada no [ADR 0022](../docs/adr/0022-jev-segunda-camada-antifraude-pix.md), mas ainda não foi implementada.
 
 ```mermaid
 flowchart LR
@@ -50,6 +50,36 @@ Variáveis opcionais:
 - `JEV_TIMEOUT_S`: o padrão é `2.0`. É o prazo total de cada chamada, não o de cada operação de socket. Aceita valores acima de 0 e até 30 s, com ponto ou vírgula decimal.
 
 A saída é UTF-8. Se o PowerShell mostrar acentos trocados ao redirecionar, rode antes `[Console]::OutputEncoding = [Text.Encoding]::UTF8`.
+
+## Tela no BankMore
+
+A tela `/ops/jev` do frontend Angular mostra cada Pix passando pelas duas camadas:
+
+- a decisão em três etapas: XGBoost (números) → Jev (contexto) → política (código), com a comparação "só XGBoost × com Jev";
+- as probabilidades de cada golpe e os sinais de terceiro, com os limiares da política;
+- o que saiu do banco: o estado enviado ao Jev, com os dados pessoais trocados por marcadores destacados;
+- os 8 cenários em sequência, com o placar no fim;
+- um Pix personalizado: você escreve o motivo e vê o Jev decidir na hora.
+
+Em dois terminais, da raiz do repositório:
+
+```powershell
+# terminal 1: API local da tela (porta 5011)
+$env:PYTHONPATH = 'jev'
+$env:TYPESAFE_API_KEY = '<sua chave>'
+python -m bankmore_jev --api              # sem chave: python -m bankmore_jev --api --offline
+
+# terminal 2: frontend
+cd frontend
+npm ci                                    # só na primeira vez
+npm start
+```
+
+Abra http://localhost:4200/ops/jev. A tela não exige login nem a stack Docker. Se o PowerShell recusar o `npm` por política de execução de scripts, use `npm.cmd ci` e `npm.cmd start`.
+
+A API escuta só em 127.0.0.1 e aceita CORS apenas do `ng serve` local, em `http://localhost:4200` e `http://127.0.0.1:4200` (mude com `JEV_ORIGINS`). Se a porta 5011 já estiver ocupada por outra API, ela se recusa a subir, em vez de dividir a porta. Ela também confere o `Host` e exige JSON, para outra página aberta no navegador não conseguir usar a sua chave.
+
+No Windows, deixe o repositório num caminho curto (ex.: `C:\dev\BankMore-Challenge`): em pastas muito profundas, o `node_modules` passa do limite de 260 caracteres. O npm 11 pode avisar que bloqueou scripts de instalação (esbuild, lmdb); a tela funciona sem eles.
 
 ## Como decide
 
@@ -139,4 +169,4 @@ Os testes de transporte sobem servidores HTTP locais em 127.0.0.1 para cobrir:
 - linha de status inválida;
 - servidor que responde devagar demais, e chamadas lentas que não podem travar as próximas.
 
-Esses testes ignoram o proxy da máquina. Nenhum teste chama a TypeSafe.
+Os testes da API da tela sobem o servidor numa porta livre e cobrem validação, CORS e a checagem de `Host`. Esses testes ignoram o proxy da máquina. Nenhum teste chama a TypeSafe.

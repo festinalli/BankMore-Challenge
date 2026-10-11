@@ -130,6 +130,24 @@ def _timeout_do_ambiente(env) -> float | None:
     return valor if 0 < valor <= PRAZO_MAXIMO_S else None
 
 
+class ConfiguracaoInvalida(Exception):
+    """Chave, prazo ou modelo inválidos: a mensagem nunca inclui a chave."""
+
+
+def criar_cliente(env, transport=urllib_transport) -> JevClient:
+    """Cliente do Jev a partir das variáveis de ambiente (TYPESAFE_API_KEY, TYPESAFE_MODEL, JEV_TIMEOUT_S)."""
+    chave = env.get("TYPESAFE_API_KEY", "")
+    if not chave.strip():
+        raise ConfiguracaoInvalida("Defina TYPESAFE_API_KEY (ou rode com --offline para respostas simuladas).")
+    timeout_s = _timeout_do_ambiente(env)
+    if timeout_s is None:
+        raise ConfiguracaoInvalida(f"JEV_TIMEOUT_S deve ser um número de segundos entre 0 e {PRAZO_MAXIMO_S:g} (ex.: 2.0).")
+    try:
+        return JevClient(chave, model=env.get("TYPESAFE_MODEL") or DEFAULT_MODEL, timeout_s=timeout_s, transport=transport)
+    except ValueError as falha:
+        raise ConfiguracaoInvalida(str(falha)) from None
+
+
 def executar(args, out=sys.stdout, err=sys.stderr, env=os.environ, transport=urllib_transport) -> int:
     cenarios = carregar_cenarios()
     if args.cenario is not None:
@@ -140,18 +158,10 @@ def executar(args, out=sys.stdout, err=sys.stderr, env=os.environ, transport=url
 
     cliente = None
     if not args.offline:
-        chave = env.get("TYPESAFE_API_KEY", "")
-        if not chave.strip():
-            print("Defina TYPESAFE_API_KEY (ou rode com --offline para respostas simuladas).", file=err)
-            return 2
-        timeout_s = _timeout_do_ambiente(env)
-        if timeout_s is None:
-            print(f"JEV_TIMEOUT_S deve ser um número de segundos entre 0 e {PRAZO_MAXIMO_S:g} (ex.: 2.0).", file=err)
-            return 2
         try:
-            cliente = JevClient(chave, model=env.get("TYPESAFE_MODEL") or DEFAULT_MODEL, timeout_s=timeout_s, transport=transport)
-        except ValueError as falha:
-            print(str(falha), file=err)  # a mensagem nunca inclui a chave
+            cliente = criar_cliente(env, transport)
+        except ConfiguracaoInvalida as falha:
+            print(str(falha), file=err)
             return 2
 
     questions = perguntas(nenhum_primeiro=getattr(args, "nenhum_primeiro", False))
@@ -167,19 +177,40 @@ def executar(args, out=sys.stdout, err=sys.stderr, env=os.environ, transport=url
 def _avaliar(cenario: dict, cliente: JevClient | None, ml_url: str | None, questions: dict) -> dict:
     pix = pix_do_cenario(cenario)
     score = score_do_fraud_ml(ml_url, pix) if ml_url else cenario["score_xgboost_exemplo"]
+    simulada = resposta_offline(cenario) if cliente is None else None
+    avaliacao = avaliar_pix(pix, score, cliente, questions, simulada=simulada, rotulo_log=f"cenário {cenario['id']}")
+    return {"id": cenario["id"], "titulo": cenario["titulo"], "categoria": cenario["categoria"], **avaliacao}
 
+
+def avaliar_pix(
+    pix: Pix,
+    score: float | None,
+    cliente: JevClient | None,
+    questions: dict,
+    *,
+    simulada: JevResult | None = None,
+    rotulo_log: str = "Pix",
+) -> dict:
+    """Um Pix pelas duas camadas: XGBoost (score) e Jev; a política decide.
+
+    Sem cliente (modo --offline), usa a resposta `simulada`, se houver. Qualquer
+    falha do Jev vira erro_jev e a decisão fica só com o XGBoost (fail-open).
+    """
+    estado = montar_estado(pix)
     erro = None
     if cliente is None:
-        jev = resposta_offline(cenario)
+        jev = simulada
+        if jev is None:
+            erro = "modo simulado: este Pix não tem resposta gravada; rode com o Jev ao vivo"
     else:
         try:
-            jev = cliente.ask(montar_estado(pix), questions)
+            jev = cliente.ask(estado, questions)
         except JevError as falha:
             jev, erro = None, _imprimivel(falha)
         except Exception as falha:  # última rede do fail-open, como o catch do FraudeClient.cs
             jev, erro = None, f"falha inesperada ({type(falha).__name__})"
         if erro:
-            log.warning("Jev indisponível no cenário %s: %s", cenario["id"], erro)
+            log.warning("Jev indisponível no %s: %s", rotulo_log, erro)
 
     so_xgboost = decidir(score, None).acao
     decisao = decidir(score, jev)
@@ -188,15 +219,16 @@ def _avaliar(cenario: dict, cliente: JevClient | None, ml_url: str | None, quest
     if golpe is not None:
         rotulo = golpe.choice if golpe.choice in OPCOES_GOLPE else "(rótulo desconhecido)"
     return {
-        "id": cenario["id"],
-        "titulo": cenario["titulo"],
-        "categoria": cenario["categoria"],
         "score_xgboost": score,
         "so_xgboost": so_xgboost.name,
+        "estado_enviado": estado,
         "jev": None if jev is None else {
             "modelo": _imprimivel(jev.model),
             "golpe": rotulo,
             "confianca": golpe.confidence if golpe else None,
+            "probabilidades": {
+                opcao: valor for opcao, valor in (golpe.probabilities if golpe else {}).items() if opcao in OPCOES_GOLPE
+            },
             "sinais": {nome: jev.nouls.get(nome) for nome in SINAIS},
             "latencia_ms": round(jev.latency_ms, 1),
         },
