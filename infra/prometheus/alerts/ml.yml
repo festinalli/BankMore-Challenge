@@ -1,0 +1,62 @@
+# Alertas do ciclo de vida do modelo de fraude (ADR 0023).
+# Sem Alertmanager no compose: os alertas aparecem em http://localhost:9090/alerts.
+# O fraud-ml roda 1 processo (Gunicorn gthread), então os contadores são do serviço todo.
+# Limiares do PSI pela regra de bolso do mercado: 0,10 moderado, 0,25 alto.
+groups:
+  - name: fraud-ml
+    rules:
+      - alert: MlDriftAlto
+        expr: max by (feature) (ml_feature_psi) > 0.25
+        for: 15m
+        labels: { severity: warning, service: fraud-ml }
+        annotations:
+          summary: "Drift alto na feature {{ $labels.feature }} (PSI {{ $value | printf \"%.2f\" }})"
+          description: >-
+            A distribuição recente da feature se afastou da do treino. Features que vieram
+            de placeholder (sem feature store) não entram no cálculo. Conferir a origem
+            (mudança de população, bug no feature store) e avaliar retreino:
+            python retreinar.py → sombra → python portao.py.
+
+      - alert: MlDriftModerado
+        expr: max by (feature) (ml_feature_psi) > 0.10
+        for: 1h
+        labels: { severity: info, service: fraud-ml }
+        annotations:
+          summary: "Drift moderado na feature {{ $labels.feature }} (PSI {{ $value | printf \"%.2f\" }})"
+
+      - alert: MlScoreDrift
+        expr: max(ml_score_psi) > 0.25
+        for: 15m
+        labels: { severity: warning, service: fraud-ml }
+        annotations:
+          summary: "A distribuição dos scores mudou (PSI {{ $value | printf \"%.2f\" }})"
+          description: "Com o limiar fixo dos consumidores (0,95), a taxa de bloqueio muda junto."
+
+      - alert: MlSombraDiscordanciaAlta
+        expr: >-
+          sum(rate(ml_sombra_discordancias_total{limiar="consumidor"}[15m]))
+            / sum(rate(ml_sombra_predicoes_total[15m])) > 0.05
+          and sum(rate(ml_sombra_predicoes_total[15m])) > 0
+        for: 15m
+        labels: { severity: info, service: fraud-ml }
+        annotations:
+          summary: "No limiar dos consumidores, a sombra decidiria diferente em mais de 5% das transações"
+          description: >-
+            Não é falha: é o sinal de que a promoção mudaria muitos bloqueios. Ler o
+            sombra/<versao>.jsonl e o laudo do portão antes de promover.
+
+      - alert: MlSombraFalhando
+        expr: sum(increase(ml_sombra_falhas_total[10m])) > 0
+        for: 0m
+        labels: { severity: warning, service: fraud-ml }
+        annotations:
+          summary: "O modelo em sombra falhou ao carregar ou ao pontuar (as respostas não mudam)"
+          description: "Tirar da sombra se continuar: python registro.py sem-sombra \"motivo\"."
+
+      - alert: MlRecargaFalhando
+        expr: sum(increase(ml_recarga_falhas_total[10m])) > 0
+        for: 5m
+        labels: { severity: warning, service: fraud-ml }
+        annotations:
+          summary: "O serviço não consegue recarregar o registro e segue com o modelo antigo"
+          description: "Comparar /health (model_version × registro_pede) e ler o registro.json."

@@ -2,6 +2,10 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# Alertas do fraud-ml (drift, sombra), ADR 0023. Sem Alertmanager: ver /alerts.
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
 scrape_configs:
   - job_name: contacorrente-api
     metrics_path: /metrics

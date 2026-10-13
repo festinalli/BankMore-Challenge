@@ -1,0 +1,16 @@
+{
+  "versao_do_criterio": 1,
+  "escrito_em": "2026-10-13",
+  "garantia": "O hash da régua (este arquivo, dados.py e portao.py) vai na ficha de cada candidato. Se a régua mudar depois do treino, o portão recusa avaliar. Isso não impede escolher uma régua nova depois de ver resultados: só obriga a versão nova, o retreino e o laudo novo, às claras.",
+  "metrica": "recall com taxa fixa de falso positivo",
+  "fpr_alvo": 0.01,
+  "regra": "em cada conjunto de avaliação, recall do candidato >= recall da produção - tolerancia (diferença pontual)",
+  "tolerancia": 0.0,
+  "avaliacao": {
+    "seed": 20261013,
+    "n": 40000,
+    "fracao_fraude": 0.02,
+    "cenarios": ["base", "nova_fraude"]
+  },
+  "observacao": "Dados sintéticos. O falso positivo é medido sobre todas as transações legítimas (Pix, TED e TEF). Os conjuntos de avaliação usam um fluxo aleatório separado, que nenhuma seed de treino reproduz. Com 800 fraudes por conjunto, uma fraude vale 0,125 ponto de recall: tolerância zero é mais rígida que o ruído entre seeds da própria receita (ver ADR 0023)."
+}
