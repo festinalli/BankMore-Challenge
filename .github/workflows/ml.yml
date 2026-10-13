@@ -1,0 +1,69 @@
+name: ml
+
+# Testes do fraud-ml e o ciclo de vida completo do modelo (ADR 0023):
+# registro, sombra, drift, portão de promoção e reversão, em dados sintéticos.
+on:
+  push:
+    branches: [main]
+    paths: ["ml/**", "infra/prometheus/**", ".github/workflows/ml.yml"]
+  pull_request:
+    paths: ["ml/**", "infra/prometheus/**", ".github/workflows/ml.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  testes-e-portao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ml
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # a mesma da imagem Docker do fraud-ml
+          cache: pip
+          cache-dependency-path: ml/requirements.txt
+
+      - name: Dependências (versões fixas do requirements.txt)
+        run: pip install -r requirements.txt
+
+      - name: Testes
+        run: python -m unittest discover -s tests -t . -v
+
+      - name: Ciclo de vida do modelo (o script falha se um passo não acontecer)
+        run: python scripts/demo_ciclo.py --rapido --resumo resumo-do-ciclo.json
+
+      - name: Guarda os números do ciclo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumo-do-ciclo
+          path: ml/resumo-do-ciclo.json
+          if-no-files-found: ignore
+
+  imagem-e-alertas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regras de alerta do Prometheus (promtool)
+        run: >-
+          docker run --rm -v "$PWD/infra/prometheus:/p:ro" --entrypoint promtool
+          prom/prometheus:v2.54.1 check rules /p/alerts/ml.yml
+
+      - name: Imagem do fraud-ml (treina a v1 no build)
+        run: docker build -t bankmore-fraud-ml ml/
+
+      - name: A imagem sobe, responde e tem o registro
+        run: |
+          docker run -d --name fraud-ml -e REDIS_HOST= -p 5003:5003 bankmore-fraud-ml
+          for i in $(seq 1 30); do curl -fsS localhost:5003/health && break; sleep 2; done
+          curl -fsS -X POST localhost:5003/predict -H 'Content-Type: application/json' \
+            -d '{"features": {"valor": 15000, "tipo": "TED", "hora_do_dia": 3, "dow": 2}}'
+          docker exec fraud-ml python registro.py listar
+          docker logs fraud-ml

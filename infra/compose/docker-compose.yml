@@ -449,6 +449,7 @@ services:
       - '--web.enable-lifecycle'
     volumes:
       - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus_data:/prometheus
     # entra na rsfn pra scrapear o bacen-sim (ICOM), que saiu da bankmore (§2.1)
     networks: [bankmore, rsfn]

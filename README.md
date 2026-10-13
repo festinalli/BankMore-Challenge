@@ -2,6 +2,8 @@
 
 **Novo:** [Antifraude Pix com o Jev — o XGBoost lê os números, o Jev lê o contexto, o código decide](jev/README.md), com tela em `/ops/jev` ([ADR 0022](docs/adr/0022-jev-segunda-camada-antifraude-pix.md)).
 
+**Novo:** [Ciclo de vida do modelo de fraude — registro, modo sombra, drift por PSI e portão de promoção](ml/README.md#ciclo-de-vida-do-modelo) ([ADR 0023](docs/adr/0023-ciclo-de-vida-do-modelo-de-fraude.md)), em dados sintéticos.
+
 **Novo módulo:** [Fraud Intelligence — investigação com MCP, RAG e revisão humana](investigation/README.md).
 MVP isolado do pagamento, com demonstração sintética e integração opcional ao Kafka de transferências.
 
@@ -28,7 +30,7 @@ antes de ser efetivada. Todo PIX passa por **antifraude em dois níveis**: scori
 streaming** que enriquece o feature store (observa). Arquitetura limpa (Clean
 Architecture + CQRS + DDD) em 3 bounded contexts: ContaCorrente, Transferência e PIX.
 
-> **Sprints 1–10 done.** Changelog resumido abaixo; decisões em `docs/adr/` (0001–0022).
+> **Sprints 1–10 done.** Changelog resumido abaixo; decisões em `docs/adr/` (0001–0023).
 > Validação: `make e2e` (7 cenários de transferência) + `make e2e-pix` (**10 fluxos PIX**).
 
 <details>
@@ -42,7 +44,7 @@ Architecture + CQRS + DDD) em 3 bounded contexts: ContaCorrente, Transferência 
 > **Sprint 2.5 done** (16/05): **PyFlink real** — JVM + `KeyedProcessFunction` +
 > `MapState` com TTL + watermark + checkpoint EXACTLY_ONCE em RocksDB a cada 60s.
 >
-> **Sprint 3 done** (16/05): **ML em produção**. XGBoost (ROC-AUC 0.9993) treinado
+> **Sprint 3 done** (16/05): **ML no fluxo (compose)**. XGBoost (dados sintéticos) treinado
 > no build da imagem (`ml/train.py` com seed=42), servido por Flask + Gunicorn.
 > PyFlink chama `/predict` síncrono com **fail-open** (timeout 2s → segue só com
 > regras se ML cair). Decisão híbrida: regras DURAS primeiro (autotransf/burst/
@@ -219,7 +221,7 @@ Acesse:
 | Backend | .NET 8 LTS, Clean Arch + CQRS (MediatR), KafkaFlow, Dapper |
 | Mensageria | Apache Kafka 7.5 + Zookeeper + Schema Registry (Avro binário) + Kafka UI |
 | Streaming | Apache Flink 1.18 / PyFlink — `KeyedProcessFunction` + RocksDB + checkpoint EXACTLY_ONCE |
-| ML | XGBoost (ROC-AUC 0.9993) + Flask/Gunicorn — scoring síncrono inline (PIX) e via stream (transf.) |
+| ML | XGBoost (dados sintéticos) + Flask/Gunicorn — scoring síncrono inline (PIX) e via stream (transf.); registro, sombra, drift e portão (ADR 0023) |
 | PIX | `bacen-sim` (DICT + SPI/ISO 20022 `pacs.008/002/004`), BR Code EMVCo, MED, mTLS na RSFN |
 | Banco | PostgreSQL 16 com `NUMERIC(18,2)` em tudo que é dinheiro |
 | Cache | Redis 7 — feature store rolling (count_1h, valores_24h/30d) compartilhado transf.+PIX |
@@ -238,11 +240,11 @@ src/                 Solução .NET — ContaCorrente, Transferencia, Pix, Bacen
   BankMore.BacenSim    Simulador BACEN (DICT + SPI/ISO 20022 + mTLS)
 frontend/            Angular standalone
 pyflink/             fraud_detector_job.py (PyFlink real, Avro consumer)
-ml/                  Treino XGBoost + Flask /predict
+ml/                  Treino XGBoost + Flask /predict, registro de modelos, sombra, drift e portão (ADR 0023)
 investigation/       Investigação de fraude com MCP, RAG e revisão humana (ADR 0021)
 jev/                 Antifraude Pix com o Jev, segunda camada depois do XGBoost (ADR 0022)
 scripts/             e2e.sh (transferência) + e2e-pix.sh (10 fluxos PIX) + bench.sh
-docs/adr/            22 ADRs (decisões de arquitetura)
+docs/adr/            23 ADRs (decisões de arquitetura)
 ```
 
 ## Fluxo end-to-end (validado pelo `make e2e`)
@@ -320,8 +322,8 @@ A `transferencia` no Postgres é a fonte de verdade do status:
 - ✅ **PyFlink 1.18** com event-time + watermark 5s + RocksDB state + checkpoint EXACTLY_ONCE
 - ✅ Persistência da `transferencia.status` no Postgres (SOLICITADA → EFETIVADA/REJEITADA)
 - ✅ `RejeicaoConsumer` no Worker fecha o ciclo de status, salva `score_fraude` e `modelo_versao`
-- ✅ **ML em produção:** XGBoost embedded em imagem Docker (`ml/Dockerfile` treina no build).
-  Flask `/predict` + `/metrics` servidos por Gunicorn. ROC-AUC 0.9993 em dataset sintético.
+- ✅ **ML no fluxo (compose):** XGBoost embedded em imagem Docker (`ml/Dockerfile` treina no build).
+  Flask `/predict` + `/metrics` servidos por Gunicorn. Dataset sintético: o AUC alto não diz nada sobre produção.
 - ✅ PyFlink chama `/predict` síncrono com **fail-open** (timeout 2s); decisão híbrida regras+score
 - ✅ 5 cenários no `make e2e`: feliz, auto-transf, valor alto (ALERTA), burst, **ML rejeita R$ 30k**
 

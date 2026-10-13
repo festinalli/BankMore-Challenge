@@ -52,7 +52,7 @@ C4Container
         Container(worker, "Tarifas.Worker", ".NET 8", "Efetiva transferências, tarifas, feature store + análise pós-liquidação PIX")
 
         Container(detector, "fraud-detector", "PyFlink 1.18", "Regras + ML em tempo real; KeyedState + checkpoint EXACTLY_ONCE")
-        Container(ml, "fraud-ml", "Flask + XGBoost", "/predict — scoring (ROC-AUC 0.9993)")
+        Container(ml, "fraud-ml", "Flask + XGBoost", "/predict — scoring (dados sintéticos); registro, sombra e drift (ADR 0023)")
 
         ContainerDb(pg, "PostgreSQL 16", "RDBMS", "Contas, movimentos, transferências, outbox, PIX, consentimentos")
         ContainerDb(redis, "Redis 7", "Cache", "Feature store rolling (count_1h, valores_24h/30d)")
